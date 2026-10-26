@@ -1,6 +1,6 @@
 # 🚀 macOS Tahoe 26/27 Bloat Service Disabler
 
-[![macOS](https://img.shields.io/badge/macOS-Tahoe%2026%2F27-blue)](https://www.apple.com/macos/) [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE) [![Version](https://img.shields.io/badge/Version-2.3-orange)](https://github.com/manooll/Lean_Mac/releases)
+[![macOS](https://img.shields.io/badge/macOS-Tahoe%2026%2F27-blue)](https://www.apple.com/macos/) [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE) [![Version](https://img.shields.io/badge/Version-2.4-orange)](https://github.com/realnoedelo/Lean_Mac/releases)
 
 > **Your Mac running hot? Battery draining fast? CPU spinning on "nothing"?**
 
@@ -10,7 +10,7 @@ This tool surgically disables the resource hogs while keeping everything you act
 
 **⚡ Install in seconds:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/manooll/Lean_Mac/main/install.sh -o install.sh && sudo bash install.sh
+curl -fsSL https://raw.githubusercontent.com/realnoedelo/Lean_Mac/main/install.sh -o install.sh && sudo bash install.sh
 ```
 
 ---
@@ -57,13 +57,14 @@ spotlightknowledged               # Knowledge-based search
 mdworker (multiple)               # Metadata workers gone wild
 ```
 
-### Cloud Sync Chaos
+### Cloud and media background work
 ```
 itunescloudd                      # iTunes/Music cloud sync
-icloud.searchpartyuseragent       # Find My network spam
-icloud.findmydeviced              # Find My device chatter
-findmy.findmylocateagent          # Location broadcasting
+mediaanalysisd                    # Photo and video analysis
 ```
+
+Mail, AirDrop, Exchange, Handoff, and Find My labels are inspected but
+explicitly protected. They are never part of the automatic disable set.
 
 ### Analytics & Telemetry (The Spies)
 ```
@@ -87,8 +88,9 @@ memoryanalyticsd                 # Memory usage profiling
 
 ### 1️⃣ **Bloat Service Disabler** (`disable_bloat_services.sh`)
 - Kills 29+ background processes (targeting CPU hogs first)
-- Runs automatically: every 60s (system) / 5min (user)
+- Runs automatically: once at login, then every 60s (system) / 5min (user)
 - **Critical fix:** Mail sync services preserved
+- **Recovery:** re-enables protected labels left disabled by older releases
 - **Smart:** Won't interfere with system updates
 
 ### 2️⃣ **Cache Cleanup Utility** (`cleanup_caches.sh`)  
@@ -137,6 +139,8 @@ sudo launchctl unload /Library/LaunchDaemons/com.user.disablebloatservices.plist
 **Your essentials remain untouched:**
 - **Mail Services:** `cloudd`, `icloudmailagent`, `syncdefaultsd`, `protectedcloudkeysyncing`
 - **AirDrop/Sharing:** `sharingd`  
+- **Find My:** `searchpartyuseragent`, `findmydeviced`, `findmylocateagent`, `findmymac`
+- **Handoff/Continuity:** `rapportd`
 - **Exchange Sync:** `exchangesyncd`
 - **System Updates:** Protected from interference during updates
 - **47+ critical system processes** safe from termination
@@ -145,21 +149,26 @@ sudo launchctl unload /Library/LaunchDaemons/com.user.disablebloatservices.plist
 
 ## 📊 Performance Tracking
 
-**Real-time statistics:**
+Each run writes measured values to the log; values depend on current workload:
 ```
-Services disabled: 23/29 (79% success)
-Processes killed: 15/18 (83% success)
-Memory freed: 847MB  
-CPU usage reduction: 32%
+Services disabled: <count>
+Services already disabled: <count>
+Services re-enabled: <count>
+Processes killed: <count>
+Processes respawned/SIP-protected: <count>
+Available RAM before/after/change: <measured values>
+Target-process RSS before/after/change: <measured values>
 ```
 
 **Monitor the action:**
 ```bash
 # Watch system-wide changes
 tail -f /var/log/disable_bloat_services.log
+tail -f /var/log/disable_bloat_services.error.log
 
 # Monitor user-level changes  
 tail -f ~/Library/Logs/disable_bloat_services.log
+tail -f ~/Library/Logs/disable_bloat_services.error.log
 
 # Cache cleanup activity
 tail -f ~/Library/Logs/cache_cleanup.log
@@ -213,6 +222,9 @@ processes, use `sudo disable_bloat_services.sh --dry-run`.
 sudo launchctl list | grep -E "(intelligence|spotlight|cloud)"
 ```
 
+SIP-protected Apple jobs may respawn. The log labels these as
+`STILL RUNNING/RESPAWNED`; they are not reported as permanently stopped.
+
 **Still high CPU usage?**
 ```bash
 top -o cpu | head -20  # See what survived the purge
@@ -224,13 +236,20 @@ sudo chown $(whoami):staff ~/Library/Logs/disable_bloat_services.log
 ```
 
 **Need help?**
-1. Check [Issues](https://github.com/manooll/Lean_Mac/issues) page
+1. Check [Issues](https://github.com/realnoedelo/Lean_Mac/issues) page
 2. Review log files for error messages
-3. Join [Discussions](https://github.com/manooll/Lean_Mac/discussions)
+3. Join [Discussions](https://github.com/realnoedelo/Lean_Mac/discussions)
 
 ---
 
 ## 📈 Version History
+
+### v2.4 - SAFE PERIODIC RUNNER
+- **Stopped the restart loop** by removing `KeepAlive=true` from the periodic LaunchDaemon
+- **Recovered protected services** that older releases had accidentally disabled
+- **Preserved Handoff/Continuity** (`rapportd`) alongside Mail, AirDrop, Exchange and Find My
+- **Fixed root GUI verification** so `gui/0` is never queried and error logs stay clean
+- **Expanded run accounting** with already-disabled, re-enabled and complete decision counts
 
 ### v2.3 - CRITICAL MAIL FIX 🚨
 - **Fixed Mail services** (`cloudd`, `icloudmailagent`, `syncdefaultsd` now preserved)
@@ -260,14 +279,14 @@ Found a new bloat service? Performance issue? We want to hear about it.
 
 **Quick start:**
 ```bash
-git clone https://github.com/manooll/Lean_Mac.git
+git clone https://github.com/realnoedelo/Lean_Mac.git
 cd Lean_Mac
 sudo ./install.sh  # Test on a VM first!
 ```
 
 **Get involved:**
-- [Report Issues](https://github.com/manooll/Lean_Mac/issues)
-- [Join Discussions](https://github.com/manooll/Lean_Mac/discussions)
+- [Report Issues](https://github.com/realnoedelo/Lean_Mac/issues)
+- [Join Discussions](https://github.com/realnoedelo/Lean_Mac/discussions)
 - Submit PRs with improvements
 
 ## 🧪 Testing
@@ -288,9 +307,9 @@ macOS or `apt install shellcheck` on Debian/Ubuntu).
 
 **MIT License** – [View Details](LICENSE)
 
-- **[GitHub Repository](https://github.com/manooll/Lean_Mac)**
-- **[Latest Release](https://github.com/manooll/Lean_Mac/releases/latest)**
-- **[Report Issues](https://github.com/manooll/Lean_Mac/issues)**
+- **[GitHub Repository](https://github.com/realnoedelo/Lean_Mac)**
+- **[Latest Release](https://github.com/realnoedelo/Lean_Mac/releases/latest)**
+- **[Report Issues](https://github.com/realnoedelo/Lean_Mac/issues)**
 
 ---
 

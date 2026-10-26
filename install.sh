@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # macOS Tahoe 26/27 Bloat Service Disabler - Installation Script
-# Version: 2.3
+# Version: 2.4
 #
 # This script installs the macOS Bloat Service Disabler system including:
 # - Main bloat service disabler script
@@ -9,9 +9,9 @@
 # - LaunchDaemon for system-wide operation
 # - LaunchAgent for user-specific operation
 #
-# Author: Jay L. [Manull]
+# Maintainer: realnoedelo
 # License: MIT
-# Repository: https://github.com/manooll/Lean_Mac.git
+# Repository: https://github.com/realnoedelo/Lean_Mac.git
 
 set -euo pipefail
 
@@ -206,7 +206,7 @@ create_plist_files() {
     <string>wheel</string>
     
     <key>KeepAlive</key>
-    <true/>
+    <false/>
     
     <key>ThrottleInterval</key>
     <integer>10</integer>
@@ -381,7 +381,7 @@ show_post_install_info() {
     print_title "Installation Complete!"
     echo
     echo "==========================================="
-    echo "🎉 macOS Bloat Service Disabler v2.3 Installed"
+    echo "🎉 macOS Bloat Service Disabler v2.4 Installed"
     echo "==========================================="
     echo
     echo "📍 Installed Components:"
@@ -404,16 +404,18 @@ show_post_install_info() {
     echo
     echo "📝 Log Files:"
     echo "  • System log: /var/log/disable_bloat_services.log"
+    echo "  • System error log: /var/log/disable_bloat_services.error.log"
     echo "  • User log: $user_home/Library/Logs/disable_bloat_services.log"
+    echo "  • User error log: $user_home/Library/Logs/disable_bloat_services.error.log"
     echo "  • Cache log: $user_home/Library/Logs/cache_cleanup.log"
     echo
     echo "⚠️  Important Notes:"
-    echo "  • The system will continuously disable bloat services"
+    echo "  • The system checks bloat services every 60 seconds"
     echo "  • Cache cleaner runs separately - use manually or schedule as needed"
     echo "  • System restart recommended for full effect"
     echo "  • Monitor logs for any issues"
     echo
-    echo "🔧 For support, visit: https://github.com/manooll/Lean_Mac"
+    echo "🔧 For support, visit: https://github.com/realnoedelo/Lean_Mac"
     echo "==========================================="
 }
 
@@ -421,7 +423,7 @@ show_post_install_info() {
 main() {
     echo "==========================================="
     echo "🚀 macOS Tahoe 26/27 Bloat Service Disabler"
-    echo "    Installation Script v2.3"
+    echo "    Installation Script v2.4"
     echo "==========================================="
     echo
     

@@ -32,8 +32,13 @@ grep -Fq 'MODE="interactive"' disable_bloat_services.sh
 grep -Fq 'MODE="list"' disable_bloat_services.sh
 grep -Fq 'MODE="dry-run"' disable_bloat_services.sh
 grep -Fq 'PRESERVED: $domain/$service_name' disable_bloat_services.sh
+grep -Fq 'com.apple.rapportd' disable_bloat_services.sh
 if rg -n 'kill_process "findmy|kill_process "findmylocate' disable_bloat_services.sh; then
   echo 'Find My process kill remains in the automatic list' >&2
+  exit 1
+fi
+if rg -n 'disable_service "com.apple.rapportd"|kill_process "rapportd"' disable_bloat_services.sh; then
+  echo 'Handoff/Continuity process kill remains in the automatic list' >&2
   exit 1
 fi
 if grep -Fq 'Skipping - No sudo in automated mode' disable_bloat_services.sh; then

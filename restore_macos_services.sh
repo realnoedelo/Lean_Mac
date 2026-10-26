@@ -9,9 +9,9 @@
 # - Restore Spotlight indexing
 # - Provide system health verification
 #
-# Author: Jay L. [Manull]
+# Maintainer: realnoedelo
 # License: MIT
-# Repository: https://github.com/manooll/Lean_Mac
+# Repository: https://github.com/realnoedelo/Lean_Mac
 
 set -euo pipefail
 

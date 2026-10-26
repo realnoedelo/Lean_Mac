@@ -46,6 +46,7 @@ SERVICES_FAILED=0
 SERVICES_NOT_FOUND=0
 SERVICES_PROTECTED=0
 SERVICES_ALREADY_DISABLED=0
+SERVICES_REENABLED=0
 PROCESSES_KILLED=0
 PROCESSES_FAILED=0
 PROCESSES_SKIPPED=0
@@ -113,6 +114,7 @@ PROTECTED_SERVICES=(
     com.apple.findmymacd
     com.apple.findmymacmessenger
     com.apple.sharingd
+    com.apple.rapportd
     com.apple.exchange.exchangesyncd
 )
 
@@ -228,6 +230,50 @@ service_is_disabled() {
     local disabled_output
     disabled_output=$(launchctl print-disabled "$domain" 2>/dev/null || true)
     [[ "$disabled_output" == *"\"$service_name\" => disabled"* ]]
+}
+
+reenable_protected_service() {
+    local domain="$1"
+    local service_name="$2"
+    local launchctl_cmd=(launchctl)
+
+    if [ "$domain" = "system" ] && [ "$EUID" -ne 0 ]; then
+        launchctl_cmd=(sudo launchctl)
+    fi
+
+    if ! service_is_disabled "$domain" "$service_name"; then
+        return 0
+    fi
+    if [ "$MODE" = "dry-run" ]; then
+        log_message "🧪 DRY RUN: would re-enable protected service $domain/$service_name"
+        return 0
+    fi
+    if "${launchctl_cmd[@]}" enable "$domain/$service_name" 2>/dev/null; then
+        log_message "🔓 RE-ENABLED protected service: $domain/$service_name"
+        ((SERVICES_REENABLED+=1))
+    else
+        log_message "⚠️  PROTECTED SERVICE REMAINS DISABLED: $domain/$service_name"
+    fi
+}
+
+restore_protected_services() {
+    local protected_service
+    local user_id
+
+    log_message "--- Restoring protected Mail/AirDrop/Find My services ---"
+    if [ "$MODE" != "user-only" ]; then
+        for protected_service in "${PROTECTED_SERVICES[@]}"; do
+            reenable_protected_service "system" "$protected_service"
+        done
+    fi
+    if [ "$MODE" != "system-only" ]; then
+        while IFS= read -r user_id; do
+            [ -n "$user_id" ] || continue
+            for protected_service in "${PROTECTED_SERVICES[@]}"; do
+                reenable_protected_service "gui/$user_id" "$protected_service"
+            done
+        done < <(get_gui_uids | sort -u)
+    fi
 }
 
 list_matching_services() {
@@ -447,6 +493,10 @@ log_message "🔍 Checking for active system updates..."
 check_system_updates
 log_message "✅ No system updates detected - proceeding with debloat service"
 
+# Older releases accidentally disabled some of the services promised as
+# preserved. Repair those launchd disable flags before processing bloat.
+restore_protected_services
+
 # Cloud & Sync Services (5) - PRESERVING MAIL SERVICES
 log_message "--- Disabling Cloud & Sync Services (Preserving Mail) ---"
 # PRESERVED: com.apple.cloudd - Required for iCloud Mail sync
@@ -508,7 +558,7 @@ disable_service "com.apple.mediaremoteagent" "Media remote"
 log_message "--- Disabling Social & Communication ---"
 disable_service "com.apple.sociallayerd" "Social framework"
 disable_service "com.apple.keychainsharingmessagingd" "Keychain sharing"
-disable_service "com.apple.rapportd" "Handoff/Continuity"
+log_message "🛡️  PRESERVED: com.apple.rapportd - Handoff/Continuity"
 
 # Previously Disabled Media Services (2)
 log_message "--- Disabling Media Services ---"
@@ -539,7 +589,6 @@ kill_process "feedbackd" "Feedback Daemon"
 kill_process "knowledge-agent" "Knowledge Agent"
 kill_process "diagnostics_agent" "Diagnostics Agent"
 kill_process "duetexpertd" "Duet Expert"
-kill_process "rapportd" "Handoff/Continuity"
 kill_process "sirittsd" "Siri TTS"
 kill_process "spotlightknowledged" "Spotlight Knowledge"
 kill_process "wifianalyticsd" "WiFi Analytics"
@@ -575,7 +624,7 @@ verify_processes() {
         analyticsagent siriactionsd
         proactived intelligenceplatformd intelligencecontextd intelligenceflowd
         intelligencetasksd visualintelligenced siriappintentsd siriknowledged
-        feedbackd knowledge-agent diagnostics_agent duetexpertd rapportd sirittsd
+        feedbackd knowledge-agent diagnostics_agent duetexpertd sirittsd
         spotlightknowledged wifianalyticsd ecosystemanalyticsd osanalyticshelper
         geoanalyticsd mediaanalysisd inputanalyticsd analyticsd audioanalyticsd
         proactiveeventtrackerd mdworker mds_stores corespotlightd
@@ -593,7 +642,7 @@ verify_processes() {
     done
 }
 
-if [ "$MODE" != "dry-run" ]; then
+if [ "$MODE" != "dry-run" ] && [ "$MODE" != "user-only" ]; then
     verify_processes
 fi
 
@@ -607,7 +656,8 @@ log_message "Services failed: $SERVICES_FAILED"
 log_message "Services not found: $SERVICES_NOT_FOUND"
 log_message "Services protected: $SERVICES_PROTECTED"
 log_message "Services already disabled: $SERVICES_ALREADY_DISABLED"
-log_message "Total service decisions: $((SERVICES_DISABLED + SERVICES_FAILED + SERVICES_NOT_FOUND + SERVICES_PROTECTED))"
+log_message "Services re-enabled: $SERVICES_REENABLED"
+log_message "Total service decisions: $((SERVICES_DISABLED + SERVICES_FAILED + SERVICES_NOT_FOUND + SERVICES_PROTECTED + SERVICES_ALREADY_DISABLED + SERVICES_REENABLED))"
 RAM_AFTER_BYTES=$(memory_available_bytes)
 TARGET_RSS_AFTER_KB=$(target_process_rss_kb)
 log_message "📊 Available RAM after:  $(format_mb "$RAM_AFTER_BYTES")"
@@ -616,18 +666,34 @@ log_message "📈 Target RSS change:    $(format_mb "$(((TARGET_RSS_BEFORE_KB - 
 log_message "🛡️  System update protection: ENABLED"
 log_message "=== Bloat Service Disabler Complete ==="
 
-# Verify essential services are still running
-log_message "--- Verifying Essential Services ---"
-if launchctl print "gui/$(id -u)" | grep -q "com.apple.sharingd" 2>/dev/null; then
-    log_message "✅ KEPT: com.apple.sharingd - AirDrop/Sharing (as requested)"
-else
-    log_message "⚠️  WARNING: com.apple.sharingd not found"
-fi
+# Verify essential services are still running. A root LaunchDaemon must inspect
+# the logged-in GUI domain, not gui/0 (which emits launchctl domain errors).
+verify_essential_services() {
+    local user_id
+    local gui_services_output
+    local found_gui=false
 
-if launchctl print "gui/$(id -u)" | grep -q "com.apple.exchange.exchangesyncd" 2>/dev/null; then
-    log_message "✅ KEPT: com.apple.exchange.exchangesyncd - Exchange Sync (as requested)"
-else
-    log_message "ℹ️  INFO: com.apple.exchange.exchangesyncd not found (may not be needed)"
-fi
+    log_message "--- Verifying Essential Services ---"
+    while IFS= read -r user_id; do
+        [ -n "$user_id" ] || continue
+        found_gui=true
+        gui_services_output=$(launchctl print "gui/$user_id" 2>/dev/null || true)
+        if [[ "$gui_services_output" == *"com.apple.sharingd"* ]]; then
+            log_message "✅ KEPT: gui/$user_id/com.apple.sharingd - AirDrop/Sharing (as requested)"
+        else
+            log_message "⚠️  WARNING: gui/$user_id/com.apple.sharingd not found"
+        fi
+        if [[ "$gui_services_output" == *"com.apple.exchange.exchangesyncd"* ]]; then
+            log_message "✅ KEPT: gui/$user_id/com.apple.exchange.exchangesyncd - Exchange Sync (as requested)"
+        else
+            log_message "ℹ️  INFO: gui/$user_id/com.apple.exchange.exchangesyncd not found (may not be needed)"
+        fi
+    done < <(get_gui_uids | sort -u)
+    if [ "$found_gui" = false ]; then
+        log_message "ℹ️  INFO: no logged-in GUI domain found; essential-service check deferred"
+    fi
+}
+
+verify_essential_services
 
 exit 0
