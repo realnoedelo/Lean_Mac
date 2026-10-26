@@ -1,10 +1,10 @@
 # 🚀 macOS Tahoe 26/27 Bloat Service Disabler
 
-[![macOS](https://img.shields.io/badge/macOS-Tahoe%2026.0-blue)](https://www.apple.com/macos/) [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE) [![Version](https://img.shields.io/badge/Version-2.3-orange)](https://github.com/manooll/Lean_Mac/releases)
+[![macOS](https://img.shields.io/badge/macOS-Tahoe%2026%2F27-blue)](https://www.apple.com/macos/) [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE) [![Version](https://img.shields.io/badge/Version-2.3-orange)](https://github.com/manooll/Lean_Mac/releases)
 
 > **Your Mac running hot? Battery draining fast? CPU spinning on "nothing"?**
 
-You're not imagining it. macOS Tahoe 26.0 ships with **29+ hidden background processes** chomping through your resources—Apple Intelligence, enhanced Spotlight AI, aggressive cloud sync—even when you never asked for them.
+macOS Tahoe 26.x and 27.x expose many background services through launchd. This tool inventories exact labels, disables the curated non-essential set, and reports what macOS SIP prevents from staying stopped.
 
 This tool surgically disables the resource hogs while keeping everything you actually use: **AirDrop, Mail, Exchange sync, device location**. Your Mac, but faster, quieter, and more private.
 
@@ -29,8 +29,8 @@ curl -fsSL https://raw.githubusercontent.com/manooll/Lean_Mac/main/install.sh -o
 
 ## ✨ Why You'll Love It
 
-- **⚡ 20-40% less CPU usage** in the background
-- **🔋 500MB-1GB RAM freed** for actual work  
+- **⚡ Targets background services** that are safe to disable on the current OS
+- **🔋 Reports target-process RSS and available-memory change** instead of promising a fixed gain
 - **💾 Dramatically reduced disk I/O** (goodbye constant SSD writes)
 - **🔒 Privacy restored** (analytics/telemetry disabled)
 - **🛡️ Smart & safe** - Preserves essentials, breaks nothing
@@ -187,6 +187,7 @@ tail -f ~/Library/Logs/cache_cleanup.log
 - **Test on non-critical hardware** if possible
 - **Read the code** - you're running this as root
 - **macOS Tahoe 26.x and 27.x supported** (including 27.2)
+- **SIP-protected Apple jobs may respawn**; the log reports them explicitly and does not count them as stopped
 - **Restart recommended** after installation for full effect
 
 ### Service modes
@@ -246,7 +247,7 @@ sudo chown $(whoami):staff ~/Library/Logs/disable_bloat_services.log
 - **Deduplication & wildcards** for better efficiency
 
 ### v2.0 - The GitHub Release
-- **Apple Intelligence support** for Tahoe 26.0
+- **Apple Intelligence support** for Tahoe 26.x and 27.x
 - **Consolidated installation** system
 - **Separate cache cleanup** utility
 - **Better logging** and error handling

@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# macOS Tahoe 26.0 Service Restore Script
-# Version: 1.0 - Companion to Bloat Service Disabler
+# macOS Tahoe 26/27 Service Restore Script
+# Version: 1.1 - Companion to Bloat Service Disabler
 # Purpose: Restore all services and functionality disabled by the bloat disabler
 #
 # This script will:
@@ -22,7 +22,7 @@ else
 fi
 # Ensure log directory exists
 mkdir -p "$(dirname "$LOG_FILE")"
-SCRIPT_VERSION="1.0"
+SCRIPT_VERSION="1.1"
 export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 # Performance tracking variables
@@ -292,7 +292,7 @@ log_success_rate() {
 # --- Core Execution ---
 
 log_message "=========================================="
-log_message "macOS Tahoe 26.0 Service Restoration v$SCRIPT_VERSION"
+log_message "macOS Tahoe 26/27 Service Restoration v$SCRIPT_VERSION"
 log_message "=========================================="
 log_message "System: $(sw_vers -productName) $(sw_vers -productVersion) ($(sw_vers -buildVersion))"
 log_message "User: $(whoami), UID: $(id -u)"

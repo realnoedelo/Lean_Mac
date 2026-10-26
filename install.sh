@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # macOS Tahoe 26/27 Bloat Service Disabler - Installation Script
-# Version: 2.2
+# Version: 2.3
 #
 # This script installs the macOS Bloat Service Disabler system including:
 # - Main bloat service disabler script
@@ -379,7 +379,7 @@ show_post_install_info() {
     print_title "Installation Complete!"
     echo
     echo "==========================================="
-    echo "🎉 macOS Bloat Service Disabler v2.2 Installed"
+    echo "🎉 macOS Bloat Service Disabler v2.3 Installed"
     echo "==========================================="
     echo
     echo "📍 Installed Components:"
@@ -419,7 +419,7 @@ show_post_install_info() {
 main() {
     echo "==========================================="
     echo "🚀 macOS Tahoe 26/27 Bloat Service Disabler"
-    echo "    Installation Script v2.2"
+    echo "    Installation Script v2.3"
     echo "==========================================="
     echo
     
