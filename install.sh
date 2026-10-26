@@ -34,8 +34,6 @@ BOOTSTRAP_DIR=""
 RAW_BASE_URL="${LEAN_MAC_RAW_BASE_URL:-https://raw.githubusercontent.com/realnoedelo/Lean_Mac/main}"
 INSTALL_DIR="/usr/local/bin"
 DAEMON_PLIST_DIR="/Library/LaunchDaemons"
-AGENT_PLIST_DIR="$HOME/Library/LaunchAgents"
-LOG_DIR="$HOME/Library/Logs"
 
 cleanup_bootstrap() {
     if [ -n "$BOOTSTRAP_DIR" ] && [ -d "$BOOTSTRAP_DIR" ]; then
@@ -75,13 +73,14 @@ get_actual_user() {
     if [ -n "${SUDO_USER:-}" ]; then
         echo "$SUDO_USER"
     else
-        echo "$(whoami)"
+        whoami
     fi
 }
 
 # Function to get actual user's home directory
 get_user_home() {
-    local actual_user=$(get_actual_user)
+    local actual_user
+    actual_user=$(get_actual_user)
     eval echo "~$actual_user"
 }
 
@@ -154,8 +153,9 @@ install_scripts() {
 create_plist_files() {
     print_title "Creating launch configuration files..."
     
-    local actual_user=$(get_actual_user)
-    local user_home=$(get_user_home)
+    local actual_user user_home
+    actual_user=$(get_actual_user)
+    user_home=$(get_user_home)
     local user_agent_dir="$user_home/Library/LaunchAgents"
     
     # Create user LaunchAgent directory
@@ -261,9 +261,10 @@ EOF
 load_services() {
     print_title "Loading services..."
 
-    local actual_user=$(get_actual_user)
-    local user_home=$(get_user_home)
-    local user_uid=$(id -u "$actual_user")
+    local actual_user user_home user_uid
+    actual_user=$(get_actual_user)
+    user_home=$(get_user_home)
+    user_uid=$(id -u "$actual_user")
 
     local daemon_plist="$DAEMON_PLIST_DIR/com.user.disablebloatservices.plist"
     local daemon_label="com.user.disablebloatservices"
@@ -373,8 +374,9 @@ run_initial_execution() {
 
 # Function to display post-installation information
 show_post_install_info() {
-    local actual_user=$(get_actual_user)
-    local user_home=$(get_user_home)
+    local actual_user user_home
+    actual_user=$(get_actual_user)
+    user_home=$(get_user_home)
     
     print_title "Installation Complete!"
     echo

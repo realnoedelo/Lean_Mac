@@ -145,7 +145,8 @@ ALL_SYSTEM_SERVICES+=(
 # --- Utility Functions ---
 
 log_message() {
-    local line="$(date '+%Y-%m-%d %H:%M:%S') - $1"
+    local line
+    line="$(date '+%Y-%m-%d %H:%M:%S') - $1"
     printf '%s\n' "$line" >> "$LOG_FILE"
     if [ -t 1 ]; then
         printf '%s\n' "$line"
@@ -171,19 +172,23 @@ capture_performance_metrics() {
     log_message "📊 PERFORMANCE METRICS ($label):"
     
     # CPU usage snapshot
-    local cpu_usage=$(top -l 1 -s 0 | grep "CPU usage" | head -1 || true)
+    local cpu_usage
+    cpu_usage=$(top -l 1 -s 0 | grep "CPU usage" | head -1 || true)
     log_message "CPU: $cpu_usage"
     
     # Memory usage
-    local memory_info=$(vm_stat | head -5 | tr '\n' ' ' || true)
+    local memory_info
+    memory_info=$(vm_stat | head -5 | tr '\n' ' ' || true)
     log_message "Memory: $memory_info"
     
     # Process count
-    local proc_count=$(ps aux | wc -l || true)
+    local proc_count
+    proc_count=$(ps aux | wc -l || true)
     log_message "Process count: $proc_count"
     
     # Disk space
-    local disk_usage=$(df -h / | tail -1 | awk '{print "Used: "$3" Available: "$4" ("$5" full)"}' || true)
+    local disk_usage
+    disk_usage=$(df -h / | tail -1 | awk '{print "Used: "$3" Available: "$4" ("$5" full)"}' || true)
     log_message "Disk: $disk_usage"
 }
 
@@ -242,7 +247,7 @@ confirm_restore() {
     echo
     echo "⚠️  WARNING: This will restore the 'bloat' and may impact performance!"
     echo
-    read -p "Are you sure you want to proceed? (type 'RESTORE' to confirm): " confirm
+    read -r -p "Are you sure you want to proceed? (type 'RESTORE' to confirm): " confirm
     
     if [ "$confirm" != "RESTORE" ]; then
         log_message "❌ Restoration cancelled by user"
@@ -270,7 +275,8 @@ stop_bloat_disabler() {
     fi
     
     # Kill any running bloat disabler processes
-    local pids=$(pgrep -f "disable_bloat_services" 2>/dev/null)
+    local pids
+    pids=$(pgrep -f "disable_bloat_services" 2>/dev/null || true)
     for pid in $pids; do
         if kill -9 "$pid" 2>/dev/null; then
             log_message "💀 Killed bloat disabler process (PID: $pid)"
@@ -379,7 +385,7 @@ log_message "=========================================="
 log_message "🟢 Services enabled: $SERVICES_ENABLED | Failed: $SERVICES_FAILED"
 log_message "✅ Spotlight indexing restored on all volumes"
 
-log_message "🔍 Key services verified: $enabled_count/$(echo ${#check_services[@]})"
+log_message "🔍 Key services verified: $enabled_count/${#check_services[@]}"
 
 # Calculate success rate
 log_success_rate "$SERVICES_ENABLED" "$SERVICES_FAILED"

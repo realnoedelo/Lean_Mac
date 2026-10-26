@@ -38,7 +38,6 @@ acquire_lock() {
     return 1
 }
 if ! acquire_lock; then
-    log_message() { :; }
     exit 0
 fi
 trap 'rm -f "$LOCK_DIR/pid" 2>/dev/null || true; rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT
@@ -153,7 +152,8 @@ SYSTEM_UPDATE_PROTECTED=(
 
 # Function to log messages
 log_message() {
-    local line="$(date '+%Y-%m-%d %H:%M:%S') - $1"
+    local line
+    line="$(date '+%Y-%m-%d %H:%M:%S') - $1"
     printf '%s\n' "$line" >> "$LOG_FILE"
     if [ -t 1 ]; then
         printf '%s\n' "$line"
@@ -262,11 +262,13 @@ kill_process() {
         fi
     done
     
-    local pids=$(pgrep -f "$process_name" 2>/dev/null)
+    local pids
+    pids=$(pgrep -f "$process_name" 2>/dev/null || true)
     if [ -n "$pids" ]; then
         for pid in $pids; do
             # Double-check the actual process name to avoid false positives
-            local actual_name=$(ps -p "$pid" -o comm= 2>/dev/null | xargs basename)
+            local actual_name
+            actual_name=$(ps -p "$pid" -o comm= 2>/dev/null | xargs basename)
             
             # Additional protection check on actual process name
             local is_protected=false
