@@ -46,6 +46,7 @@ SERVICES_DISABLED=0
 SERVICES_FAILED=0
 SERVICES_NOT_FOUND=0
 SERVICES_PROTECTED=0
+SERVICES_ALREADY_DISABLED=0
 PROCESSES_KILLED=0
 PROCESSES_FAILED=0
 PROCESSES_SKIPPED=0
@@ -221,6 +222,14 @@ should_process_service() {
     esac
 }
 
+service_is_disabled() {
+    local domain="$1"
+    local service_name="$2"
+    local disabled_output
+    disabled_output=$(launchctl print-disabled "$domain" 2>/dev/null || true)
+    [[ "$disabled_output" == *"\"$service_name\" => disabled"* ]]
+}
+
 list_matching_services() {
     local domain="$1"
     log_message "🔎 Inventory for $domain:"
@@ -321,6 +330,12 @@ disable_system_service() {
         system_services_output=$("${launchctl_cmd[@]}" print system 2>/dev/null || true)
     fi
     if [[ "$system_services_output" == *"$service_name"* ]]; then
+        if service_is_disabled system "$service_name"; then
+            log_message "⏭️  SYSTEM ALREADY DISABLED: $service_name - $description"
+            ((SERVICES_ALREADY_DISABLED+=1))
+            "${launchctl_cmd[@]}" kill SIGTERM "system/$service_name" 2>/dev/null || true
+            return 0
+        fi
         if "${launchctl_cmd[@]}" disable "system/$service_name" 2>/dev/null; then
             "${launchctl_cmd[@]}" kill SIGTERM "system/$service_name" 2>/dev/null || true
             log_message "🔴 SYSTEM DISABLED: $service_name - $description"
@@ -359,6 +374,13 @@ disable_service() {
                 gui_services_output=$(launchctl print "gui/$user_id" 2>/dev/null || true)
             fi
             if [[ "$gui_services_output" == *"$service_name"* ]]; then
+                if service_is_disabled "gui/$user_id" "$service_name"; then
+                    log_message "⏭️  ALREADY DISABLED: $service_name (UID: $user_id)"
+                    ((SERVICES_ALREADY_DISABLED+=1))
+                    launchctl kill SIGTERM "gui/$user_id/$service_name" 2>/dev/null || true
+                    disabled=true
+                    continue
+                fi
                 if launchctl disable "gui/$user_id/$service_name" 2>/dev/null; then
                     launchctl kill SIGTERM "gui/$user_id/$service_name" 2>/dev/null || true
                     log_message "✅ DISABLED: $service_name - $description (UID: $user_id)"
@@ -582,6 +604,7 @@ log_message "Services disabled: $SERVICES_DISABLED"
 log_message "Services failed: $SERVICES_FAILED"
 log_message "Services not found: $SERVICES_NOT_FOUND"
 log_message "Services protected: $SERVICES_PROTECTED"
+log_message "Services already disabled: $SERVICES_ALREADY_DISABLED"
 log_message "Total service decisions: $((SERVICES_DISABLED + SERVICES_FAILED + SERVICES_NOT_FOUND + SERVICES_PROTECTED))"
 RAM_AFTER_BYTES=$(memory_available_bytes)
 TARGET_RSS_AFTER_KB=$(target_process_rss_kb)

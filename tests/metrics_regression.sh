@@ -14,6 +14,7 @@ grep -Fq 'Processes respawned/SIP-protected' disable_bloat_services.sh
 grep -Fq 'Target-process RSS before' disable_bloat_services.sh
 grep -Fq 'Target RSS change' disable_bloat_services.sh
 grep -Fq 'Services protected' disable_bloat_services.sh
+grep -Fq 'Services already disabled' disable_bloat_services.sh
 grep -Fq 'Total service decisions' disable_bloat_services.sh
 grep -Fq 'get_gui_uids' disable_bloat_services.sh
 echo 'metrics and GUI-domain regression checks passed'
