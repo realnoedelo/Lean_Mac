@@ -45,12 +45,15 @@ trap 'rm -f "$LOCK_DIR/pid" 2>/dev/null || true; rmdir "$LOCK_DIR" 2>/dev/null |
 SERVICES_DISABLED=0
 SERVICES_FAILED=0
 SERVICES_NOT_FOUND=0
+SERVICES_PROTECTED=0
 PROCESSES_KILLED=0
 PROCESSES_FAILED=0
 PROCESSES_SKIPPED=0
 PROCESSES_RESPAWNED=0
 RAM_BEFORE_BYTES=0
 RAM_AFTER_BYTES=0
+TARGET_RSS_BEFORE_KB=0
+TARGET_RSS_AFTER_KB=0
 MODE="auto"
 
 case "${1:-}" in
@@ -92,6 +95,25 @@ SYSTEM_SERVICES=(
     "com.apple.usbctelemetryd|USB-C Telemetry"
     "com.apple.cloudtelemetryd|Cloud Telemetry"
     "com.apple.osanalytics.diagnosticmonitor|OS Analytics Monitor"
+)
+
+# These labels are deliberately never disabled by automatic or interactive
+# modes. They cover Mail/iCloud sync, AirDrop, Exchange and Find My, which the
+# installer promises to preserve.
+PROTECTED_SERVICES=(
+    com.apple.cloudd
+    com.apple.icloudmailagent
+    com.apple.syncdefaultsd
+    com.apple.protectedcloudstorage.protectedcloudkeysyncing
+    com.apple.icloud.searchpartyuseragent
+    com.apple.icloud.findmydeviced.findmydevice-user-agent
+    com.apple.icloud.findmydeviced
+    com.apple.findmy.findmylocateagent
+    com.apple.findmy.findmybeaconingd
+    com.apple.findmymacd
+    com.apple.findmymacmessenger
+    com.apple.sharingd
+    com.apple.exchange.exchangesyncd
 )
 
 # System Update Protection - Processes that should NEVER be killed
@@ -153,6 +175,13 @@ format_mb() {
     awk -v bytes="$1" 'BEGIN { printf "%.0f MB", bytes / 1048576 }'
 }
 
+target_process_rss_kb() {
+    ps -axo rss=,comm= 2>/dev/null | awk '
+        /analyticsagent|siriactionsd|siriknowledged|siriinferenced|sirittsd|proactived|intelligenceplatformd|intelligencecontextd|intelligenceflowd|intelligencetasksd|visualintelligenced|siriappintentsd|feedbackd|knowledge-agent|diagnostics_agent|duetexpertd|spotlightknowledged|corespotlightd|managedcorespotlightd|mediaanalysisd|inputanalyticsd|analyticsd|audioanalyticsd|ecosystemanalyticsd|osanalyticshelper|proactiveeventtrackerd|mdworker|mds_stores/ { total += $1 }
+        END { printf "%.0f", total + 0 }
+    '
+}
+
 get_gui_uids() {
     local console_user console_uid sudo_uid
     console_user=$(stat -f '%Su' /dev/console 2>/dev/null || true)
@@ -170,6 +199,14 @@ should_process_service() {
     local service_name="$1"
     local description="$2"
     local domain="$3"
+    local protected_service
+    for protected_service in "${PROTECTED_SERVICES[@]}"; do
+        if [ "$service_name" = "$protected_service" ]; then
+            log_message "🛡️  PRESERVED: $domain/$service_name - $description"
+            ((SERVICES_PROTECTED+=1))
+            return 1
+        fi
+    done
     case "$MODE" in
         auto) return 0 ;;
         dry-run)
@@ -370,7 +407,9 @@ check_system_updates() {
 
 log_message "=== Starting macOS Bloat Service Disabler (System Update Safe) ==="
 RAM_BEFORE_BYTES=$(memory_available_bytes)
+TARGET_RSS_BEFORE_KB=$(target_process_rss_kb)
 log_message "📊 Available RAM before: $(format_mb "$RAM_BEFORE_BYTES")"
+log_message "📊 Target-process RSS before: $(format_mb "$((TARGET_RSS_BEFORE_KB * 1024))")"
 
 if [ "$MODE" = "list" ]; then
     list_matching_services "system"
@@ -414,7 +453,6 @@ disable_service "com.apple.spotlightknowledged.updater" "Spotlight knowledge upd
 disable_service "com.apple.intelligencecontextd" "Intelligence context"
 disable_service "com.apple.intelligenceflowd" "Intelligence flow"
 disable_service "com.apple.intelligencetasksd" "Intelligence task scheduler"
-disable_service "com.apple.intelligenceplatformd" "Intelligence platform"
 disable_service "com.apple.knowledgeconstructiond" "Knowledge construction"
 disable_service "com.apple.corespotlightd" "Core Spotlight"
 disable_service "com.apple.corespotlightservice" "Core Spotlight service"
@@ -465,8 +503,6 @@ log_message "--- Killing Running Bloat Processes ---"
 kill_process "analyticsagent" "Analytics Agent"
 kill_process "siriinferenced" "Siri Inference"
 kill_process "siriactionsd" "Siri Actions"
-kill_process "findmylocateagent" "Find My Location"
-kill_process "findmydevice-user-agent" "Find My Device Agent"
 kill_process "proactived" "Proactive Suggestions"
 kill_process "intelligenceplatformd" "Apple Intelligence"
 kill_process "intelligencecontextd" "Intelligence Context"
@@ -483,8 +519,6 @@ kill_process "rapportd" "Handoff/Continuity"
 kill_process "sirittsd" "Siri TTS"
 kill_process "spotlightknowledged" "Spotlight Knowledge"
 kill_process "wifianalyticsd" "WiFi Analytics"
-kill_process "ecosystemanalyticsd" "Ecosystem Analytics"
-kill_process "osanalyticshelper" "OS Analytics Helper"
 kill_process "geoanalyticsd" "Geo Analytics"
 kill_process "mediaanalysisd" "Media Analysis"
 kill_process "inputanalyticsd" "Input Analytics"
@@ -514,7 +548,7 @@ verify_processes() {
     local process_name
     local pids
     local process_checks=(
-        analyticsagent siriactionsd findmylocateagent findmydevice-user-agent
+        analyticsagent siriactionsd
         proactived intelligenceplatformd intelligencecontextd intelligenceflowd
         intelligencetasksd visualintelligenced siriappintentsd siriknowledged
         feedbackd knowledge-agent diagnostics_agent duetexpertd rapportd sirittsd
@@ -535,7 +569,9 @@ verify_processes() {
     done
 }
 
-verify_processes
+if [ "$MODE" != "dry-run" ]; then
+    verify_processes
+fi
 
 log_message "=== Summary ==="
 log_message "Processes killed: $PROCESSES_KILLED"
@@ -545,10 +581,13 @@ log_message "Processes respawned/SIP-protected: $PROCESSES_RESPAWNED"
 log_message "Services disabled: $SERVICES_DISABLED"
 log_message "Services failed: $SERVICES_FAILED"
 log_message "Services not found: $SERVICES_NOT_FOUND"
-log_message "Total services processed: $((SERVICES_DISABLED + SERVICES_FAILED))"
+log_message "Services protected: $SERVICES_PROTECTED"
+log_message "Total service decisions: $((SERVICES_DISABLED + SERVICES_FAILED + SERVICES_NOT_FOUND + SERVICES_PROTECTED))"
 RAM_AFTER_BYTES=$(memory_available_bytes)
+TARGET_RSS_AFTER_KB=$(target_process_rss_kb)
 log_message "📊 Available RAM after:  $(format_mb "$RAM_AFTER_BYTES")"
 log_message "📈 RAM change:          $(format_mb "$((RAM_AFTER_BYTES - RAM_BEFORE_BYTES))")"
+log_message "📈 Target RSS change:    $(format_mb "$(((TARGET_RSS_BEFORE_KB - TARGET_RSS_AFTER_KB) * 1024))")"
 log_message "🛡️  System update protection: ENABLED"
 log_message "=== Bloat Service Disabler Complete ==="
 

@@ -15,7 +15,11 @@
 
 set -euo pipefail
 
-LOG_FILE="$HOME/Library/Logs/restore_macos_services.log"
+if [ "$EUID" -eq 0 ]; then
+    LOG_FILE="/var/log/restore_macos_services.log"
+else
+    LOG_FILE="${HOME:?}/Library/Logs/restore_macos_services.log"
+fi
 # Ensure log directory exists
 mkdir -p "$(dirname "$LOG_FILE")"
 SCRIPT_VERSION="1.0"
@@ -34,6 +38,11 @@ AI_SERVICES=(
     "com.apple.knowledgeconstructiond"
     "com.apple.privatecloudcomputed"
     "com.apple.TGOnDeviceInferenceProviderService"
+    "com.apple.visualintelligenced"
+    "com.apple.visualintelligence.daemon-status"
+    "com.apple.uiintelligencesupport.agent"
+    "com.apple.siriappintentsd"
+    "com.apple.sirisuggestions"
 )
 
 SPOTLIGHT_SERVICES=(
@@ -41,6 +50,9 @@ SPOTLIGHT_SERVICES=(
     "com.apple.spotlightknowledged"
     "com.apple.spotlightknowledged.updater"
     "com.apple.spotlightknowledged.importer"
+    "com.apple.managedcorespotlightd"
+    "com.apple.corespotlightd"
+    "com.apple.spotlightknowledged.updater.cachedelete"
 )
 
 AI_ML_SERVICES=(
@@ -87,6 +99,9 @@ TELEMETRY_SERVICES=(
     "com.apple.osanalytics.osanalyticshelper"
     "com.apple.audioanalyticsd"
     "com.apple.usbctelemetryd"
+    "com.apple.cloudtelemetryd"
+    "com.apple.osanalytics.diagnosticmonitor"
+    "com.apple.analyticsd.agent"
 )
 
 MEDIA_SERVICES=(
@@ -116,11 +131,38 @@ ADOBE_SERVICES=(
 ALL_USER_SERVICES=("${AI_SERVICES[@]}" "${SPOTLIGHT_SERVICES[@]}" "${AI_ML_SERVICES[@]}" "${SIRI_SERVICES[@]}" "${ICLOUD_SERVICES[@]}" "${TELEMETRY_SERVICES[@]}" "${MEDIA_SERVICES[@]}" "${SOCIAL_SERVICES[@]}" "${ADOBE_SERVICES[@]}")
 
 ALL_SYSTEM_SERVICES=("${TELEMETRY_SERVICES[@]}" "${ADOBE_SERVICES[@]}")
+ALL_SYSTEM_SERVICES+=(
+    "com.apple.icloud.findmydeviced"
+    "com.apple.findmy.findmylocateagent"
+    "com.apple.findmymacd"
+    "com.apple.findmymacmessenger"
+    "com.apple.osanalytics.osanalyticshelper"
+    "com.apple.diagnosticservicesd"
+    "com.apple.ecosystemanalyticsd"
+    "com.apple.audioanalyticsd"
+)
 
 # --- Utility Functions ---
 
 log_message() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "$LOG_FILE"
+    local line="$(date '+%Y-%m-%d %H:%M:%S') - $1"
+    printf '%s\n' "$line" >> "$LOG_FILE"
+    if [ -t 1 ]; then
+        printf '%s\n' "$line"
+    fi
+}
+
+get_gui_uids() {
+    local console_user console_uid sudo_uid
+    console_user=$(stat -f '%Su' /dev/console 2>/dev/null || true)
+    if [ -n "$console_user" ] && [ "$console_user" != "root" ]; then
+        console_uid=$(id -u "$console_user" 2>/dev/null || true)
+        [ -n "$console_uid" ] && printf '%s\n' "$console_uid"
+    fi
+    if [ -n "${SUDO_USER:-}" ]; then
+        sudo_uid=$(id -u "$SUDO_USER" 2>/dev/null || true)
+        [ -n "$sudo_uid" ] && printf '%s\n' "$sudo_uid"
+    fi
 }
 
 # Function to capture system performance metrics
@@ -150,8 +192,8 @@ enable_service() {
     local service_name="$1"
     local enabled=false
     
-    # Get all logged-in users
-    for user_id in $(ps -axo uid,comm | grep loginwindow | awk '{print $1}' | sort -u || true); do
+    # Check the active console user and the sudo caller's GUI domains.
+    for user_id in $(get_gui_uids | sort -u); do
         if [[ "$user_id" =~ ^[0-9]+$ ]] && [ "$user_id" -ge 500 ]; then
             # Try to enable for this user
             if launchctl enable "gui/$user_id/$service_name" 2>/dev/null; then
@@ -164,18 +206,6 @@ enable_service() {
             fi
         fi
     done
-    
-    # Also try current user context if running as user
-    if [ "$EUID" -ne 0 ]; then
-        if launchctl enable "gui/$(id -u)/$service_name" 2>/dev/null; then
-            log_message "✅ ENABLED: $service_name (current user)"
-            enabled=true
-            ((SERVICES_ENABLED+=1))
-        else
-            log_message "❌ FAILED TO ENABLE: $service_name (current user)"
-            ((SERVICES_FAILED+=1))
-        fi
-    fi
     
     if [ "$enabled" = false ]; then
         log_message "ℹ️  NOT FOUND OR ALREADY ENABLED: $service_name"
@@ -329,7 +359,8 @@ check_services=("com.apple.assistantd" "com.apple.cloudd" "com.apple.corespotlig
 enabled_count=0
 
 for svc in "${check_services[@]}"; do
-    if launchctl print "gui/$(id -u)" 2>/dev/null | grep -q "$svc" 2>/dev/null; then
+    gui_services_output=$(launchctl print "gui/$(id -u)" 2>/dev/null || true)
+    if [[ "$gui_services_output" == *"$svc"* ]]; then
         log_message "✅ VERIFIED: $svc is enabled"
         ((enabled_count+=1))
     else
