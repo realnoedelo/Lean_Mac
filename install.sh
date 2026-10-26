@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# macOS Tahoe 26.0 Bloat Service Disabler - Installation Script
-# Version: 2.1
+# macOS Tahoe 26/27 Bloat Service Disabler - Installation Script
+# Version: 2.2
 #
 # This script installs the macOS Bloat Service Disabler system including:
 # - Main bloat service disabler script
@@ -24,10 +24,23 @@ NC='\033[0m' # No Color
 
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The one-file curl install documented in the README places only this script
+# in the current directory.  Missing companion files are bootstrapped from
+# the same repository into a private temporary directory below.
+SOURCE_DIR="$SCRIPT_DIR"
+BOOTSTRAP_DIR=""
+RAW_BASE_URL="${LEAN_MAC_RAW_BASE_URL:-https://raw.githubusercontent.com/manooll/Lean_Mac/main}"
 INSTALL_DIR="/usr/local/bin"
 DAEMON_PLIST_DIR="/Library/LaunchDaemons"
 AGENT_PLIST_DIR="$HOME/Library/LaunchAgents"
 LOG_DIR="$HOME/Library/Logs"
+
+cleanup_bootstrap() {
+    if [ -n "$BOOTSTRAP_DIR" ] && [ -d "$BOOTSTRAP_DIR" ]; then
+        rm -rf "$BOOTSTRAP_DIR"
+    fi
+}
+trap cleanup_bootstrap EXIT
 
 # Function to print colored output
 print_status() {
@@ -70,6 +83,33 @@ get_user_home() {
     eval echo "~$actual_user"
 }
 
+# Download the companion scripts when install.sh was fetched on its own.
+# This keeps both documented install forms working: a full git clone and the
+# short curl command from the README.
+prepare_source_files() {
+    local required_file
+    local required_files=(
+        "disable_bloat_services.sh"
+        "cleanup_caches.sh"
+        "restore_macos_services.sh"
+    )
+
+    for required_file in "${required_files[@]}"; do
+        if [ ! -f "$SOURCE_DIR/$required_file" ]; then
+            if [ -z "$BOOTSTRAP_DIR" ]; then
+                BOOTSTRAP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/lean-mac.XXXXXX")
+                SOURCE_DIR="$BOOTSTRAP_DIR"
+                print_status "Companion files are missing; downloading the release set..."
+            fi
+            if ! curl -fsSL "$RAW_BASE_URL/$required_file" -o "$SOURCE_DIR/$required_file"; then
+                print_error "Unable to download $required_file from $RAW_BASE_URL"
+                exit 1
+            fi
+            chmod +x "$SOURCE_DIR/$required_file"
+        fi
+    done
+}
+
 # Function to install script files
 install_scripts() {
     print_title "Installing script files..."
@@ -78,32 +118,32 @@ install_scripts() {
     mkdir -p "$INSTALL_DIR"
     
     # Install main bloat service disabler
-    if [ -f "$SCRIPT_DIR/disable_bloat_services.sh" ]; then
-        cp "$SCRIPT_DIR/disable_bloat_services.sh" "$INSTALL_DIR/"
+    if [ -f "$SOURCE_DIR/disable_bloat_services.sh" ]; then
+        cp "$SOURCE_DIR/disable_bloat_services.sh" "$INSTALL_DIR/"
         chmod +x "$INSTALL_DIR/disable_bloat_services.sh"
         print_status "✅ Installed: disable_bloat_services.sh"
     else
-        print_error "❌ disable_bloat_services.sh not found in $SCRIPT_DIR"
+        print_error "❌ disable_bloat_services.sh is unavailable"
         exit 1
     fi
     
     # Install cache cleanup utility
-    if [ -f "$SCRIPT_DIR/cleanup_caches.sh" ]; then
-        cp "$SCRIPT_DIR/cleanup_caches.sh" "$INSTALL_DIR/"
+    if [ -f "$SOURCE_DIR/cleanup_caches.sh" ]; then
+        cp "$SOURCE_DIR/cleanup_caches.sh" "$INSTALL_DIR/"
         chmod +x "$INSTALL_DIR/cleanup_caches.sh"
         print_status "✅ Installed: cleanup_caches.sh"
     else
-        print_error "❌ cleanup_caches.sh not found in $SCRIPT_DIR"
+        print_error "❌ cleanup_caches.sh is unavailable"
         exit 1
     fi
     
     # Install restore script
-    if [ -f "$SCRIPT_DIR/restore_macos_services.sh" ]; then
-        cp "$SCRIPT_DIR/restore_macos_services.sh" "$INSTALL_DIR/"
+    if [ -f "$SOURCE_DIR/restore_macos_services.sh" ]; then
+        cp "$SOURCE_DIR/restore_macos_services.sh" "$INSTALL_DIR/"
         chmod +x "$INSTALL_DIR/restore_macos_services.sh"
         print_status "✅ Installed: restore_macos_services.sh"
     else
-        print_error "❌ restore_macos_services.sh not found in $SCRIPT_DIR"
+        print_error "❌ restore_macos_services.sh is unavailable"
         exit 1
     fi
 }
@@ -351,8 +391,8 @@ show_post_install_info() {
 # Main installation function
 main() {
     echo "==========================================="
-    echo "🚀 macOS Tahoe 26.0 Bloat Service Disabler"
-    echo "    Installation Script v2.1"
+    echo "🚀 macOS Tahoe 26/27 Bloat Service Disabler"
+    echo "    Installation Script v2.2"
     echo "==========================================="
     echo
     
@@ -365,6 +405,15 @@ main() {
     # Check macOS version
     macos_version=$(sw_vers -productVersion)
     print_status "Detected macOS version: $macos_version"
+
+    case "$macos_version" in
+        26.*|27.*)
+            print_status "✅ macOS $macos_version is supported by this build"
+            ;;
+        *)
+            print_warning "⚠️  This build targets macOS 26.x and 27.x; continuing on $macos_version"
+            ;;
+    esac
     
     # Warn about potential risks
     echo
@@ -383,6 +432,7 @@ main() {
     fi
     
     # Run installation steps
+    prepare_source_files
     install_scripts
     create_plist_files
     load_services

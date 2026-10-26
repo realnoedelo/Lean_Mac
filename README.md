@@ -1,4 +1,4 @@
-# 🚀 macOS Tahoe 26.0 Bloat Service Disabler
+# 🚀 macOS Tahoe 26/27 Bloat Service Disabler
 
 [![macOS](https://img.shields.io/badge/macOS-Tahoe%2026.0-blue)](https://www.apple.com/macos/) [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE) [![Version](https://img.shields.io/badge/Version-2.3-orange)](https://github.com/manooll/Lean_Mac/releases)
 
@@ -186,7 +186,7 @@ tail -f ~/Library/Logs/cache_cleanup.log
 - **Backup your system** (seriously, do this first)
 - **Test on non-critical hardware** if possible
 - **Read the code** - you're running this as root
-- **macOS Tahoe 26.0 only** (may work on others, YMMV)
+- **macOS Tahoe 26.x and 27.x supported** (including 27.2)
 - **Restart recommended** after installation for full effect
 
 ---
