@@ -10,5 +10,6 @@ fi
 grep -Fq 'Available RAM before' disable_bloat_services.sh
 grep -Fq 'Available RAM after' disable_bloat_services.sh
 grep -Fq 'RAM change' disable_bloat_services.sh
+grep -Fq 'Processes respawned/SIP-protected' disable_bloat_services.sh
 grep -Fq 'get_gui_uids' disable_bloat_services.sh
 echo 'metrics and GUI-domain regression checks passed'

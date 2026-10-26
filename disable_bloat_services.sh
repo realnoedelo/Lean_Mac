@@ -19,7 +19,7 @@ mkdir -p "$(dirname "$LOG_FILE")"
 
 # The daemon and agent can fire at the same time. One run must own the log and
 # counters so the two jobs do not report duplicate or conflicting results.
-LOCK_DIR="/tmp/lean-mac-disable-bloat.lock"
+LOCK_DIR="${LEAN_MAC_LOCK_DIR:-/tmp/lean-mac-disable-bloat.lock}"
 acquire_lock() {
     if mkdir "$LOCK_DIR" 2>/dev/null; then
         printf '%s\n' "$$" > "$LOCK_DIR/pid"
@@ -48,6 +48,7 @@ SERVICES_NOT_FOUND=0
 PROCESSES_KILLED=0
 PROCESSES_FAILED=0
 PROCESSES_SKIPPED=0
+PROCESSES_RESPAWNED=0
 RAM_BEFORE_BYTES=0
 RAM_AFTER_BYTES=0
 MODE="auto"
@@ -264,6 +265,7 @@ disable_system_service() {
     fi
     
     local launchctl_cmd=(launchctl)
+    local system_services_output
     if [ "$EUID" -ne 0 ]; then
         launchctl_cmd=(sudo launchctl)
     fi
@@ -272,8 +274,14 @@ disable_system_service() {
         return 0
     fi
 
-    if "${launchctl_cmd[@]}" print system 2>/dev/null | grep -Fq "$service_name" 2>/dev/null; then
+    system_services_output=$("${launchctl_cmd[@]}" print system 2>/dev/null || true)
+    if [[ "$system_services_output" != *"$service_name"* ]]; then
+        sleep 1
+        system_services_output=$("${launchctl_cmd[@]}" print system 2>/dev/null || true)
+    fi
+    if [[ "$system_services_output" == *"$service_name"* ]]; then
         if "${launchctl_cmd[@]}" disable "system/$service_name" 2>/dev/null; then
+            "${launchctl_cmd[@]}" kill SIGTERM "system/$service_name" 2>/dev/null || true
             log_message "🔴 SYSTEM DISABLED: $service_name - $description"
             ((SERVICES_DISABLED+=1))
         else
@@ -291,6 +299,7 @@ disable_service() {
     local service_name="$1"
     local description="$2"
     local disabled=false
+    local gui_services_output
     if [ "$MODE" = "system-only" ]; then
         return 0
     fi
@@ -303,8 +312,14 @@ disable_service() {
     for user_id in $(get_gui_uids | sort -u); do
         if [[ "$user_id" =~ ^[0-9]+$ ]] && [ "$user_id" -ge 500 ]; then
             # Try to disable for this user
-            if launchctl print "gui/$user_id" 2>/dev/null | grep -q "$service_name" 2>/dev/null; then
+            gui_services_output=$(launchctl print "gui/$user_id" 2>/dev/null || true)
+            if [[ "$gui_services_output" != *"$service_name"* ]]; then
+                sleep 1
+                gui_services_output=$(launchctl print "gui/$user_id" 2>/dev/null || true)
+            fi
+            if [[ "$gui_services_output" == *"$service_name"* ]]; then
                 if launchctl disable "gui/$user_id/$service_name" 2>/dev/null; then
+                    launchctl kill SIGTERM "gui/$user_id/$service_name" 2>/dev/null || true
                     log_message "✅ DISABLED: $service_name - $description (UID: $user_id)"
                     disabled=true
                     ((SERVICES_DISABLED+=1))
@@ -491,10 +506,38 @@ kill_process "mds_stores" "Spotlight Stores"
 kill_process "corespotlightd" "Core Spotlight"
 kill_process "managedcorespotlightd" "Managed Core Spotlight"
 
+verify_processes() {
+    local process_name
+    local pids
+    local process_checks=(
+        analyticsagent siriactionsd findmylocateagent findmydevice-user-agent
+        proactived intelligenceplatformd intelligencecontextd intelligenceflowd
+        intelligencetasksd visualintelligenced siriappintentsd siriknowledged
+        feedbackd knowledge-agent diagnostics_agent duetexpertd rapportd sirittsd
+        spotlightknowledged wifianalyticsd ecosystemanalyticsd osanalyticshelper
+        geoanalyticsd mediaanalysisd inputanalyticsd analyticsd audioanalyticsd
+        proactiveeventtrackerd mdworker mds_stores corespotlightd
+        managedcorespotlightd
+    )
+
+    sleep 2
+    log_message "--- Verifying targeted processes after cleanup ---"
+    for process_name in "${process_checks[@]}"; do
+        pids=$(pgrep -x "$process_name" 2>/dev/null || true)
+        if [ -n "$pids" ]; then
+            log_message "⚠️  STILL RUNNING/RESPAWNED: $process_name (PIDs: $pids)"
+            ((PROCESSES_RESPAWNED+=1))
+        fi
+    done
+}
+
+verify_processes
+
 log_message "=== Summary ==="
 log_message "Processes killed: $PROCESSES_KILLED"
 log_message "Processes failed: $PROCESSES_FAILED"
 log_message "Processes protected: $PROCESSES_SKIPPED"
+log_message "Processes respawned/SIP-protected: $PROCESSES_RESPAWNED"
 log_message "Services disabled: $SERVICES_DISABLED"
 log_message "Services failed: $SERVICES_FAILED"
 log_message "Services not found: $SERVICES_NOT_FOUND"
