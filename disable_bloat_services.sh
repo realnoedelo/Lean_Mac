@@ -17,6 +17,24 @@ SERVICES_FAILED=0
 PROCESSES_KILLED=0
 PROCESSES_SKIPPED=0
 
+# System LaunchDaemons checked by their exact launchd labels. Keep this list
+# explicit so every target is visible in the log and independently testable.
+SYSTEM_SERVICES=(
+    "com.apple.wifianalyticsd|WiFi Analytics"
+    "com.apple.icloud.findmydeviced|Find My Device"
+    "com.apple.ecosystemanalyticsd|Ecosystem Analytics"
+    "com.apple.findmy.findmylocateagent|Find My Location"
+    "com.apple.findmy.findmymacmessenger|Find My Mac Messenger"
+    "com.apple.findmymacd|Find My Mac"
+    "com.apple.diagnosticservicesd|Diagnostic Services"
+    "com.apple.osanalytics.osanalyticshelper|OS Analytics Helper"
+    "com.apple.analyticsd|Analytics Daemon"
+    "com.apple.audioanalyticsd|Audio Analytics"
+    "com.apple.usbctelemetryd|USB-C Telemetry"
+    "com.apple.cloudtelemetryd|Cloud Telemetry"
+    "com.apple.osanalytics.diagnosticmonitor|OS Analytics Monitor"
+)
+
 # System Update Protection - Processes that should NEVER be killed
 SYSTEM_UPDATE_PROTECTED=(
     "softwareupdate"
@@ -117,8 +135,13 @@ disable_system_service() {
     local service_name="$1"
     local description="$2"
     
-    if sudo launchctl print system 2>/dev/null | grep -q "$service_name" 2>/dev/null; then
-        if sudo launchctl disable "system/$service_name" 2>/dev/null; then
+    local launchctl_cmd=(launchctl)
+    if [ "$EUID" -ne 0 ]; then
+        launchctl_cmd=(sudo launchctl)
+    fi
+
+    if "${launchctl_cmd[@]}" print system 2>/dev/null | grep -Fq "$service_name" 2>/dev/null; then
+        if "${launchctl_cmd[@]}" disable "system/$service_name" 2>/dev/null; then
             log_message "🔴 SYSTEM DISABLED: $service_name - $description"
             ((SERVICES_DISABLED++))
         else
@@ -230,6 +253,15 @@ disable_service "com.apple.proactived" "Proactive suggestions"
 disable_service "com.apple.duetexpertd" "Duet expert system"
 disable_service "com.apple.knowledge-agent" "Knowledge agent"
 disable_service "com.apple.spotlightknowledged.updater" "Spotlight knowledge updater"
+# macOS 27.2 additions discovered from the live gui launchd domain.
+disable_service "com.apple.intelligencecontextd" "Intelligence context"
+disable_service "com.apple.intelligenceflowd" "Intelligence flow"
+disable_service "com.apple.intelligencetasksd" "Intelligence task scheduler"
+disable_service "com.apple.knowledgeconstructiond" "Knowledge construction"
+disable_service "com.apple.corespotlightd" "Core Spotlight"
+disable_service "com.apple.corespotlightservice" "Core Spotlight service"
+disable_service "com.apple.managedcorespotlightd" "Managed Core Spotlight"
+disable_service "com.apple.proactiveeventtrackerd" "Proactive event tracker"
 
 # Telemetry & Analytics (3)
 log_message "--- Disabling Telemetry & Analytics ---"
@@ -255,21 +287,12 @@ log_message "--- Disabling Media Services ---"
 disable_service "com.apple.mediaanalysisd" "Media analysis"
 disable_service "com.apple.mediastream.mstreamd" "Media streaming"
 
-# SYSTEM-LEVEL SERVICES (LaunchDaemons) - Skipped in automated mode
-log_message "--- System-Level Services (Skipping - No sudo in automated mode) ---"
-log_message "ℹ️  System-level services require sudo and are skipped during automated runs"
-log_message "💡 To disable system services, run the script manually: $SCRIPT_PATH"
-# disable_system_service "com.apple.wifianalyticsd" "WiFi Analytics"
-# disable_system_service "com.apple.icloud.findmydeviced" "Find My Device (System)"
-# disable_system_service "com.apple.ecosystemanalyticsd" "Ecosystem Analytics"
-# disable_system_service "com.apple.findmy.findmybeaconingd" "Find My Beaconing"
-# disable_system_service "com.apple.diagnosticservicesd" "Diagnostic Services"
-# disable_system_service "com.apple.osanalytics.osanalyticshelper" "OS Analytics Helper"
-# disable_system_service "com.apple.findmymacd" "Find My Mac"
-# disable_system_service "com.apple.findmymacmessenger" "Find My Mac Messenger"
-# disable_system_service "com.apple.analyticsd" "Analytics Daemon"
-# disable_system_service "com.apple.audioanalyticsd" "Audio Analytics"
-# disable_system_service "com.apple.usbctelemetryd" "USB-C Telemetry"
+# SYSTEM-LEVEL SERVICES (LaunchDaemons)
+log_message "--- Checking System-Level Services by exact launchd name ---"
+for service_entry in "${SYSTEM_SERVICES[@]}"; do
+    IFS='|' read -r service_name service_description <<< "$service_entry"
+    disable_system_service "$service_name" "$service_description"
+done
 
 # KILL RUNNING PROCESSES
 log_message "--- Killing Running Bloat Processes ---"

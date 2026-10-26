@@ -352,7 +352,7 @@ show_post_install_info() {
     print_title "Installation Complete!"
     echo
     echo "==========================================="
-    echo "🎉 macOS Bloat Service Disabler v2.1 Installed"
+    echo "🎉 macOS Bloat Service Disabler v2.2 Installed"
     echo "==========================================="
     echo
     echo "📍 Installed Components:"
