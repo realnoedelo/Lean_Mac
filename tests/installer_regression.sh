@@ -17,6 +17,7 @@ grep -Fq '<string>--system-only</string>' install.sh
 grep -Fq '<string>--user-only</string>' install.sh
 grep -Fq '/var/log/disable_bloat_services.error.log' install.sh
 grep -Fq 'Library/Logs/disable_bloat_services.error.log' install.sh
+grep -Fq 'rotate_error_logs' install.sh
 if rg -n -U '<key>KeepAlive</key>\s*<true/>' install.sh; then
   echo 'periodic jobs must not use KeepAlive=true' >&2
   exit 1

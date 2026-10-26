@@ -257,6 +257,28 @@ EOF
     print_status "✅ Created: LaunchAgent plist (user-specific, 300s interval)"
 }
 
+rotate_error_logs() {
+    local actual_user
+    local user_home
+    local user_error_log
+
+    actual_user=$(get_actual_user)
+    user_home=$(get_user_home)
+    user_error_log="$user_home/Library/Logs/disable_bloat_services.error.log"
+
+    if [ -f /var/log/disable_bloat_services.error.log ]; then
+        mv -f /var/log/disable_bloat_services.error.log \
+            /var/log/disable_bloat_services.error.log.previous 2>/dev/null || true
+    fi
+    if [ -f "$user_error_log" ]; then
+        mv -f "$user_error_log" "$user_error_log.previous" 2>/dev/null || true
+    fi
+    : > /var/log/disable_bloat_services.error.log
+    : > "$user_error_log"
+    chown root:wheel /var/log/disable_bloat_services.error.log
+    chown "$actual_user:staff" "$user_error_log"
+}
+
 # Function to load services
 load_services() {
     print_title "Loading services..."
@@ -466,6 +488,7 @@ main() {
     prepare_source_files
     install_scripts
     create_plist_files
+    rotate_error_logs
     load_services
     create_uninstall_script
     run_initial_execution
