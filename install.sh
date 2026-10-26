@@ -29,7 +29,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # the same repository into a private temporary directory below.
 SOURCE_DIR="$SCRIPT_DIR"
 BOOTSTRAP_DIR=""
-RAW_BASE_URL="${LEAN_MAC_RAW_BASE_URL:-https://raw.githubusercontent.com/manooll/Lean_Mac/main}"
+# This fork is the tested distribution. Set LEAN_MAC_RAW_BASE_URL when
+# running the installer from another fork or after the change is merged.
+RAW_BASE_URL="${LEAN_MAC_RAW_BASE_URL:-https://raw.githubusercontent.com/realnoedelo/Lean_Mac/main}"
 INSTALL_DIR="/usr/local/bin"
 DAEMON_PLIST_DIR="/Library/LaunchDaemons"
 AGENT_PLIST_DIR="$HOME/Library/LaunchAgents"
@@ -176,6 +178,7 @@ create_plist_files() {
     <key>ProgramArguments</key>
     <array>
         <string>$INSTALL_DIR/disable_bloat_services.sh</string>
+        <string>--system-only</string>
     </array>
     
     <key>RunAtLoad</key>
@@ -185,7 +188,7 @@ create_plist_files() {
     <string>/var/log/disable_bloat_services.log</string>
     
     <key>StandardErrorPath</key>
-    <string>/var/log/disable_bloat_services.log</string>
+    <string>/var/log/disable_bloat_services.error.log</string>
     
     <key>StartInterval</key>
     <integer>60</integer>
@@ -223,6 +226,7 @@ EOF
     <key>ProgramArguments</key>
     <array>
         <string>$INSTALL_DIR/disable_bloat_services.sh</string>
+        <string>--user-only</string>
     </array>
     
     <key>RunAtLoad</key>
@@ -232,7 +236,7 @@ EOF
     <string>$user_home/Library/Logs/disable_bloat_services.log</string>
     
     <key>StandardErrorPath</key>
-    <string>$user_home/Library/Logs/disable_bloat_services.log</string>
+    <string>$user_home/Library/Logs/disable_bloat_services.error.log</string>
     
     <key>StartInterval</key>
     <integer>300</integer>
@@ -261,23 +265,46 @@ load_services() {
     local user_home=$(get_user_home)
     local user_uid=$(id -u "$actual_user")
 
+    local daemon_plist="$DAEMON_PLIST_DIR/com.user.disablebloatservices.plist"
+    local daemon_label="com.user.disablebloatservices"
+
     # Bootstrap LaunchDaemon (system-wide)
-    if launchctl bootstrap system "$DAEMON_PLIST_DIR/com.user.disablebloatservices.plist" 2>/dev/null; then
+    if launchctl bootstrap system "$daemon_plist" 2>/dev/null; then
         print_status "✅ Bootstrapped: System-wide LaunchDaemon"
     else
-        print_warning "⚠️  LaunchDaemon may already be running or failed to bootstrap"
+        print_warning "⚠️  LaunchDaemon may already be running; reloading it..."
+        launchctl bootout system "$daemon_plist" 2>/dev/null || true
+        launchctl bootout "system/$daemon_label" 2>/dev/null || true
+        sleep 1
+        if launchctl bootstrap system "$daemon_plist" 2>/dev/null || launchctl load -w "$daemon_plist" 2>/dev/null; then
+            print_status "✅ Reloaded: System-wide LaunchDaemon"
+        elif launchctl print "system/$daemon_label" >/dev/null 2>&1; then
+            print_status "✅ Existing: System-wide LaunchDaemon"
+        else
+            print_error "❌ Failed to load system LaunchDaemon"
+            return 1
+        fi
     fi
 
     # Bootstrap LaunchAgent (user-specific)
     local agent_plist="$user_home/Library/LaunchAgents/com.user.disablebloatservices.agent.plist"
+    local agent_label="com.user.disablebloatservices.agent"
     if sudo -u "$actual_user" launchctl bootstrap "gui/$user_uid" "$agent_plist" 2>/dev/null; then
         print_status "✅ Bootstrapped: User-specific LaunchAgent"
     else
-        print_warning "⚠️  LaunchAgent may already be running or failed to bootstrap; attempting kickstart..."
-        if sudo -u "$actual_user" launchctl kickstart -k "gui/$user_uid/com.user.disablebloatservices" 2>/dev/null; then
+        print_warning "⚠️  LaunchAgent may already be running; reloading it..."
+        sudo -u "$actual_user" launchctl bootout "gui/$user_uid" "$agent_plist" 2>/dev/null || true
+        sudo -u "$actual_user" launchctl bootout "gui/$user_uid/$agent_label" 2>/dev/null || true
+        sleep 1
+        if sudo -u "$actual_user" launchctl bootstrap "gui/$user_uid" "$agent_plist" 2>/dev/null || sudo -u "$actual_user" launchctl load -w "$agent_plist" 2>/dev/null; then
+            print_status "✅ Reloaded: User-specific LaunchAgent"
+        elif sudo -u "$actual_user" launchctl print "gui/$user_uid/$agent_label" >/dev/null 2>&1; then
+            print_status "✅ Existing: User-specific LaunchAgent"
+        elif sudo -u "$actual_user" launchctl kickstart -k "gui/$user_uid/$agent_label" 2>/dev/null; then
             print_status "✅ Kickstarted: User-specific LaunchAgent"
         else
-            print_warning "⚠️  Failed to kickstart user LaunchAgent"
+            print_error "❌ Failed to load user LaunchAgent"
+            return 1
         fi
     fi
 }

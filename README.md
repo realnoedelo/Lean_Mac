@@ -189,6 +189,20 @@ tail -f ~/Library/Logs/cache_cleanup.log
 - **macOS Tahoe 26.x and 27.x supported** (including 27.2)
 - **Restart recommended** after installation for full effect
 
+### Service modes
+
+The automatic mode checks exact launchd labels and records disabled, failed,
+and missing services. For a read-only inventory of names discovered on the
+current Mac:
+
+```bash
+sudo disable_bloat_services.sh --list
+```
+
+To review each candidate before changing it, use `sudo disable_bloat_services.sh
+--interactive`. To validate the run without changing services or killing
+processes, use `sudo disable_bloat_services.sh --dry-run`.
+
 ---
 
 ## 🛠️ Troubleshooting

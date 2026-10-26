@@ -157,10 +157,10 @@ enable_service() {
             if launchctl enable "gui/$user_id/$service_name" 2>/dev/null; then
                 log_message "✅ ENABLED: $service_name (UID: $user_id)"
                 enabled=true
-                ((SERVICES_ENABLED++))
+                ((SERVICES_ENABLED+=1))
             else
                 log_message "❌ FAILED TO ENABLE: $service_name (UID: $user_id)"
-                ((SERVICES_FAILED++))
+                ((SERVICES_FAILED+=1))
             fi
         fi
     done
@@ -170,10 +170,10 @@ enable_service() {
         if launchctl enable "gui/$(id -u)/$service_name" 2>/dev/null; then
             log_message "✅ ENABLED: $service_name (current user)"
             enabled=true
-            ((SERVICES_ENABLED++))
+            ((SERVICES_ENABLED+=1))
         else
             log_message "❌ FAILED TO ENABLE: $service_name (current user)"
-            ((SERVICES_FAILED++))
+            ((SERVICES_FAILED+=1))
         fi
     fi
     
@@ -188,10 +188,10 @@ enable_system_service() {
     
     if sudo launchctl enable "system/$service_name" 2>/dev/null; then
         log_message "🟢 SYSTEM ENABLED: $service_name"
-        ((SERVICES_ENABLED++))
+        ((SERVICES_ENABLED+=1))
     else
         log_message "❌ SYSTEM FAILED TO ENABLE: $service_name"
-        ((SERVICES_FAILED++))
+        ((SERVICES_FAILED+=1))
     fi
 }
 
@@ -331,7 +331,7 @@ enabled_count=0
 for svc in "${check_services[@]}"; do
     if launchctl print "gui/$(id -u)" 2>/dev/null | grep -q "$svc" 2>/dev/null; then
         log_message "✅ VERIFIED: $svc is enabled"
-        ((enabled_count++))
+        ((enabled_count+=1))
     else
         log_message "⚠️  NOT VERIFIED: $svc may not be enabled"
     fi

@@ -28,6 +28,9 @@ for service in "${system_targets[@]}"; do
   grep -Fq "\"$service|" disable_bloat_services.sh
 done
 grep -Fq 'Checking System-Level Services by exact launchd name' disable_bloat_services.sh
+grep -Fq 'MODE="interactive"' disable_bloat_services.sh
+grep -Fq 'MODE="list"' disable_bloat_services.sh
+grep -Fq 'MODE="dry-run"' disable_bloat_services.sh
 if grep -Fq 'Skipping - No sudo in automated mode' disable_bloat_services.sh; then
   echo 'system service skip path still present' >&2
   exit 1
