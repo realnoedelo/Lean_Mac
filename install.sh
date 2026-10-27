@@ -264,8 +264,6 @@ create_plist_files() {
     <array>
         <string>$INSTALL_DIR/disable_bloat_services.sh</string>
         <string>--system-only</string>
-        <string>--profile</string>
-        <string>$PROFILE</string>
     </array>
     
     <key>RunAtLoad</key>
@@ -314,8 +312,6 @@ EOF
     <array>
         <string>$INSTALL_DIR/disable_bloat_services.sh</string>
         <string>--user-only</string>
-        <string>--profile</string>
-        <string>$PROFILE</string>
     </array>
     
     <key>RunAtLoad</key>

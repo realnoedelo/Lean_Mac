@@ -21,7 +21,6 @@ grep -Fq 'rotate_error_logs' install.sh
 grep -Fq 'remove_previous_installation' install.sh
 grep -Fq 'PROFILE_FILE="$CONFIG_DIR/lean_mac.conf"' install.sh
 grep -Fq 'choose_profile' install.sh
-grep -Fq '<string>--profile</string>' install.sh
 if rg -n -U '<key>KeepAlive</key>\s*<true/>' install.sh; then
   echo 'periodic jobs must not use KeepAlive=true' >&2
   exit 1
