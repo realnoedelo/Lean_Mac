@@ -28,6 +28,11 @@ export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 # Performance tracking variables
 SERVICES_ENABLED=0
 SERVICES_FAILED=0
+ASSUME_YES=false
+
+if [ "${1:-}" = "--yes" ] || [ "${1:-}" = "-y" ]; then
+    ASSUME_YES=true
+fi
 
 # Same service lists as the bloat disabler (for restoration)
 AI_SERVICES=(
@@ -232,6 +237,10 @@ enable_system_service() {
 
 # Function to verify user really wants to restore
 confirm_restore() {
+    if [ "$ASSUME_YES" = true ]; then
+        log_message "✅ Restoration confirmed by caller (--yes)"
+        return 0
+    fi
     echo
     echo "=========================================="
     echo "⚠️  macOS Service Restoration Warning"

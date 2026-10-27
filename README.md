@@ -49,12 +49,12 @@ privatecloudcomputed               # Private cloud compute
 intelligencetasksd                 # AI task scheduler
 ```
 
-### Enhanced Spotlight (The Disk Destroyers)  
+### Enhanced Spotlight (kept for image text search)
 ```
-mds_stores                         # Can spike to 60%+ CPU
-corespotlightservice               # Core spotlight with AI
-spotlightknowledged               # Knowledge-based search
-mdworker (multiple)               # Metadata workers gone wild
+mds_stores                         # Image/document metadata index
+corespotlightservice               # Core Spotlight index
+spotlightknowledged                # Knowledge-based search
+mdworker (multiple)                # Metadata workers
 ```
 
 ### Cloud and media background work
@@ -74,27 +74,31 @@ diagnostics_agent                 # Diagnostic data shipping
 wifianalyticsd                    # WiFi usage tracking
 ```
 
-### Media Processing Madness
+### Optional media and telemetry processing
 ```
-mediaanalysisd                    # Heavy CPU/RAM for photo analysis
 proactiveeventtrackerd           # Predictive behavior tracking
 geoanalyticsd                    # Location analytics
 memoryanalyticsd                 # Memory usage profiling
 ```
+
+`mediaanalysisd`, Visual Intelligence, Core Spotlight and metadata workers are
+kept enabled. macOS uses them for Live Text/OCR, Quick Look and searchable text
+extraction from JPEG/PNG files.
 
 ---
 
 ## 📦 What You Get
 
 ### 1️⃣ **Bloat Service Disabler** (`disable_bloat_services.sh`)
-- Kills 29+ background processes (targeting CPU hogs first)
+- Kills optional background processes (targeting CPU hogs first)
 - Runs automatically: once at login, then every 60s (system) / 5min (user)
-- **Critical fix:** Mail sync services preserved
+- **Critical fix:** Mail sync and Live Text/OCR services preserved
 - **Recovery:** re-enables protected labels left disabled by older releases
 - **Smart:** Won't interfere with system updates
 
 ### 2️⃣ **Cache Cleanup Utility** (`cleanup_caches.sh`)  
-- Purges Apple Intelligence caches, Spotlight junk, telemetry logs
+- Purges Apple Intelligence caches and telemetry logs. Spotlight and media
+  analysis data remain intact for Live Text/OCR and image search.
 - Run manually or schedule independently
 
 ### 3️⃣ **Installation System** (`install.sh`)
@@ -118,9 +122,18 @@ memoryanalyticsd                 # Memory usage profiling
 **Manual commands:**
 ```bash
 sudo disable_bloat_services.sh    # Run full sweep (includes system services)
+sudo disable_bloat_services.sh --profile safe       # Telemetry only
+sudo disable_bloat_services.sh --interactive         # Ask with impact per label
 sudo cleanup_caches.sh            # Purge system caches
 sudo restore_macos_services.sh    # Restore everything
 ```
+
+During installation the profile menu offers **Safe**, **Balanced** and
+**Custom**. Safe disables telemetry/diagnostics only. Balanced also disables
+optional Siri/Apple Intelligence and background helper groups. Custom asks for
+each group and stores the choice in `/usr/local/etc/lean_mac.conf`. The
+installer removes any previous Lean Mac jobs, restores their disabled labels
+when possible, and then installs the selected profile.
 
 **Service management:**
 ```bash

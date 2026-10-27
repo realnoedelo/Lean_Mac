@@ -56,6 +56,66 @@ RAM_AFTER_BYTES=0
 TARGET_RSS_BEFORE_KB=0
 TARGET_RSS_AFTER_KB=0
 MODE="auto"
+PROFILE="${LEAN_MAC_PROFILE:-balanced}"
+CONFIG_FILE="${LEAN_MAC_CONFIG_FILE:-/usr/local/etc/lean_mac.conf}"
+
+load_saved_profile() {
+    local saved_profile
+    if [ -z "${LEAN_MAC_PROFILE:-}" ] && [ -r "$CONFIG_FILE" ]; then
+        saved_profile=$(awk -F= '/^PROFILE=/{print $2; exit}' "$CONFIG_FILE" 2>/dev/null || true)
+        [ -n "$saved_profile" ] && PROFILE="$saved_profile"
+    fi
+}
+
+profile_group_enabled() {
+    local group="$1"
+    case "$PROFILE" in
+        safe|conservative)
+            [ "$group" = "telemetry" ]
+            ;;
+        balanced)
+            return 0
+            ;;
+        custom)
+            grep -Fqx "GROUP_${group}=1" "$CONFIG_FILE" 2>/dev/null
+            ;;
+        *)
+            log_message "⚠️  Unknown profile '$PROFILE'; using balanced"
+            PROFILE="balanced"
+            return 0
+            ;;
+    esac
+}
+
+service_group() {
+    case "$1" in
+        com.apple.*analytics*|com.apple.*telemetry*|com.apple.feedbackd|com.apple.diagnos*)
+            printf '%s\n' telemetry ;;
+        com.apple.intelligence*|com.apple.visualintelligence*|com.apple.uiintelligence*|com.apple.siri*|com.apple.assistant*|com.apple.proactive*|com.apple.duet*|com.apple.knowledge*|com.apple.corespotlight*|com.apple.managedcorespotlightd|com.apple.spotlightknowledge*)
+            printf '%s\n' intelligence ;;
+        com.apple.icloud.searchparty*|com.apple.itunescloudd|com.apple.findmy*|com.apple.icloud.findmy*)
+            printf '%s\n' cloud ;;
+        com.apple.appstore*|com.apple.weather*|com.apple.mediaremoteagent|com.apple.mediastream*)
+            printf '%s\n' store ;;
+        com.apple.social*|com.apple.keychainsharing*)
+            printf '%s\n' social ;;
+        *)
+            printf '%s\n' balanced ;;
+    esac
+}
+
+service_impact() {
+    case "$(service_group "$1")" in
+        telemetry) printf '%s\n' "reduces analytics/diagnostic activity; no normal feature loss" ;;
+        intelligence) printf '%s\n' "may disable Siri, proactive suggestions or Apple Intelligence tasks" ;;
+        cloud) printf '%s\n' "may reduce Music/cloud helper refresh; protected Mail and Find My remain" ;;
+        store) printf '%s\n' "may delay Weather/App Store/media-remote background updates" ;;
+        social) printf '%s\n' "may affect some sharing integrations; Handoff remains protected" ;;
+        *) printf '%s\n' "optional background activity" ;;
+    esac
+}
+
+load_saved_profile
 
 case "${1:-}" in
     --auto|"") MODE="auto" ;;
@@ -64,6 +124,10 @@ case "${1:-}" in
     --list) MODE="list" ;;
     --system-only) MODE="system-only" ;;
     --user-only) MODE="user-only" ;;
+    --profile)
+        PROFILE="${2:-}"
+        [ -n "$PROFILE" ] || { echo "--profile requires a value" >&2; exit 2; }
+        ;;
     --help|-h)
         cat <<'USAGE'
 Usage: disable_bloat_services.sh [--auto|--interactive|--dry-run|--list]
@@ -73,11 +137,20 @@ Usage: disable_bloat_services.sh [--auto|--interactive|--dry-run|--list]
   --list          Read-only inventory of matching labels in system/gui domains.
   --system-only   Run system services and process cleanup (LaunchDaemon mode).
   --user-only     Run GUI services only (LaunchAgent mode).
+  --profile NAME  Use safe, balanced, or custom service groups.
 USAGE
         exit 0
         ;;
     *) echo "Unknown option: $1 (use --help)" >&2; exit 2 ;;
 esac
+
+# launchd entries pass the execution mode first and the profile second.
+if [ "${2:-}" = "--profile" ] && [ -n "${3:-}" ]; then
+    PROFILE="$3"
+fi
+if [ "$MODE" = "interactive" ] && [ "${2:-}" != "--profile" ]; then
+    PROFILE="balanced"
+fi
 
 # System LaunchDaemons checked by their exact launchd labels. Keep this list
 # explicit so every target is visible in the log and independently testable.
@@ -116,6 +189,31 @@ PROTECTED_SERVICES=(
     com.apple.sharingd
     com.apple.rapportd
     com.apple.exchange.exchangesyncd
+    # Image text recognition and searchable image metadata (Live Text/OCR).
+    # These are functional services, not optional telemetry.
+    com.apple.mediaanalysisd
+    com.apple.mediaanalysisd-access
+    com.apple.visualintelligenced
+    com.apple.visualintelligence.daemon-status
+    com.apple.uiintelligencesupport.agent
+    com.apple.corespotlightd
+    com.apple.corespotlightservice
+    com.apple.managedcorespotlightd
+    com.apple.spotlightknowledged
+    com.apple.spotlightknowledged.importer
+)
+
+# Processes that support Live Text/OCR, Quick Look metadata and image search.
+# Do not terminate them from the automatic cleanup path. A user may still
+# select them explicitly in a future interactive mode if that is ever needed.
+FUNCTIONAL_PROTECTED_PROCESSES=(
+    mediaanalysisd
+    visualintelligenced
+    corespotlightd
+    managedcorespotlightd
+    spotlightknowledged
+    mdworker
+    mds_stores
 )
 
 # System Update Protection - Processes that should NEVER be killed
@@ -180,7 +278,7 @@ format_mb() {
 
 target_process_rss_kb() {
     ps -axo rss=,comm= 2>/dev/null | awk '
-        /analyticsagent|siriactionsd|siriknowledged|siriinferenced|sirittsd|proactived|intelligenceplatformd|intelligencecontextd|intelligenceflowd|intelligencetasksd|visualintelligenced|siriappintentsd|feedbackd|knowledge-agent|diagnostics_agent|duetexpertd|spotlightknowledged|corespotlightd|managedcorespotlightd|mediaanalysisd|inputanalyticsd|analyticsd|audioanalyticsd|ecosystemanalyticsd|osanalyticshelper|proactiveeventtrackerd|mdworker|mds_stores/ { total += $1 }
+        /analyticsagent|siriactionsd|siriknowledged|siriinferenced|sirittsd|proactived|intelligenceplatformd|intelligencecontextd|intelligenceflowd|intelligencetasksd|siriappintentsd|feedbackd|knowledge-agent|diagnostics_agent|duetexpertd|inputanalyticsd|analyticsd|audioanalyticsd|ecosystemanalyticsd|osanalyticshelper|proactiveeventtrackerd|wifianalyticsd|geoanalyticsd/ { total += $1 }
         END { printf "%.0f", total + 0 }
     '
 }
@@ -203,6 +301,7 @@ should_process_service() {
     local description="$2"
     local domain="$3"
     local protected_service
+    local group
     for protected_service in "${PROTECTED_SERVICES[@]}"; do
         if [ "$service_name" = "$protected_service" ]; then
             log_message "🛡️  PRESERVED: $domain/$service_name - $description"
@@ -210,6 +309,11 @@ should_process_service() {
             return 1
         fi
     done
+    group=$(service_group "$service_name")
+    if ! profile_group_enabled "$group"; then
+        log_message "⏭️  PROFILE SKIP: $domain/$service_name - $description (group: $group, profile: $PROFILE)"
+        return 1
+    fi
     case "$MODE" in
         auto) return 0 ;;
         dry-run)
@@ -217,7 +321,7 @@ should_process_service() {
             return 1
             ;;
         interactive)
-            printf 'Disable %s/%s (%s)? [y/N] ' "$domain" "$service_name" "$description" > /dev/tty
+            printf 'Disable %s/%s (%s) — impact: %s? [y/N] ' "$domain" "$service_name" "$description" "$(service_impact "$service_name")" > /dev/tty
             read -r answer < /dev/tty || answer=""
             [[ "$answer" =~ ^[Yy]$ ]]
             ;;
@@ -287,9 +391,23 @@ list_matching_services() {
 }
 
 # Enhanced function to safely kill processes with system update protection
+process_group() {
+    case "$1" in
+        analyticsagent|feedbackd|diagnostics_agent|wifianalyticsd|geoanalyticsd|analyticsd|audioanalyticsd|ecosystemanalyticsd|osanalyticshelper|inputanalyticsd|proactiveeventtrackerd)
+            printf '%s\n' telemetry ;;
+        siriactionsd|siriknowledged|siriinferenced|sirittsd|proactived|intelligence*|siriappintentsd|duetexpertd|knowledge-agent|spotlightknowledged*)
+            printf '%s\n' intelligence ;;
+        commerce|itunescloudd|mediaremoteagent|Music|com.apple.Music)
+            printf '%s\n' store ;;
+        *)
+            printf '%s\n' balanced ;;
+    esac
+}
+
 kill_process() {
     local process_name="$1"
     local description="$2"
+    local group
 
     if [ "$MODE" = "dry-run" ]; then
         log_message "🧪 DRY RUN: would inspect process $process_name - $description"
@@ -298,11 +416,23 @@ kill_process() {
     if [ "$MODE" = "user-only" ]; then
         return 0
     fi
+    group=$(process_group "$process_name")
+    if ! profile_group_enabled "$group"; then
+        log_message "⏭️  PROFILE SKIP: process $process_name - $description (group: $group, profile: $PROFILE)"
+        return 0
+    fi
     
     # Check if this process is protected
     for protected in "${SYSTEM_UPDATE_PROTECTED[@]}"; do
         if [[ "$process_name" == *"$protected"* ]] || [[ "$protected" == *"$process_name"* ]]; then
             log_message "🛡️  PROTECTED: $process_name - $description (System update critical)"
+            ((PROCESSES_SKIPPED+=1))
+            return 0
+        fi
+    done
+    for protected in "${FUNCTIONAL_PROTECTED_PROCESSES[@]}"; do
+        if [ "$process_name" = "$protected" ]; then
+            log_message "🛡️  PRESERVED: $process_name - $description (Live Text/OCR and image indexing)"
             ((PROCESSES_SKIPPED+=1))
             return 0
         fi
@@ -326,6 +456,16 @@ kill_process() {
                     break
                 fi
             done
+            if [ "$is_protected" = false ]; then
+                for protected in "${FUNCTIONAL_PROTECTED_PROCESSES[@]}"; do
+                    if [ "$actual_name" = "$protected" ]; then
+                        log_message "🛡️  PRESERVED: $actual_name (PID: $pid) - Live Text/OCR and image indexing"
+                        ((PROCESSES_SKIPPED+=1))
+                        is_protected=true
+                        break
+                    fi
+                done
+            fi
             
             if [ "$is_protected" = false ]; then
                 # Use SIGTERM first, then SIGKILL if needed (gentler approach)
@@ -476,6 +616,7 @@ check_system_updates() {
 }
 
 log_message "=== Starting macOS Bloat Service Disabler (System Update Safe) ==="
+log_message "⚙️  Service profile: $PROFILE (config: $CONFIG_FILE)"
 RAM_BEFORE_BYTES=$(memory_available_bytes)
 TARGET_RSS_BEFORE_KB=$(target_process_rss_kb)
 log_message "📊 Available RAM before: $(format_mb "$RAM_BEFORE_BYTES")"
@@ -560,9 +701,10 @@ disable_service "com.apple.sociallayerd" "Social framework"
 disable_service "com.apple.keychainsharingmessagingd" "Keychain sharing"
 log_message "🛡️  PRESERVED: com.apple.rapportd - Handoff/Continuity"
 
-# Previously Disabled Media Services (2)
-log_message "--- Disabling Media Services ---"
-disable_service "com.apple.mediaanalysisd" "Media analysis"
+# Image analysis services are functional dependencies for Live Text/OCR.
+log_message "--- Preserving Image Analysis Services ---"
+log_message "🛡️  PRESERVED: mediaanalysisd and Visual Intelligence - Live Text/OCR"
+log_message "🛡️  PRESERVED: Core Spotlight and metadata workers - searchable image text"
 disable_service "com.apple.mediastream.mstreamd" "Media streaming"
 
 # SYSTEM-LEVEL SERVICES (LaunchDaemons)
@@ -582,7 +724,6 @@ kill_process "intelligenceplatformd" "Apple Intelligence"
 kill_process "intelligencecontextd" "Intelligence Context"
 kill_process "intelligenceflowd" "Intelligence Flow"
 kill_process "intelligencetasksd" "Intelligence Tasks"
-kill_process "visualintelligenced" "Visual Intelligence"
 kill_process "siriappintentsd" "Siri App Intents"
 kill_process "siriknowledged" "Siri Knowledge"
 kill_process "feedbackd" "Feedback Daemon"
@@ -590,10 +731,8 @@ kill_process "knowledge-agent" "Knowledge Agent"
 kill_process "diagnostics_agent" "Diagnostics Agent"
 kill_process "duetexpertd" "Duet Expert"
 kill_process "sirittsd" "Siri TTS"
-kill_process "spotlightknowledged" "Spotlight Knowledge"
 kill_process "wifianalyticsd" "WiFi Analytics"
 kill_process "geoanalyticsd" "Geo Analytics"
-kill_process "mediaanalysisd" "Media Analysis"
 kill_process "inputanalyticsd" "Input Analytics"
 kill_process "analyticsd" "Analytics Daemon"
 kill_process "audioanalyticsd" "Audio Analytics"
@@ -610,12 +749,12 @@ kill_process "mediaremoteagent" "Media Remote"
 kill_process "Music" "Music App"
 kill_process "com.apple.Music" "Music Service"
 
-# Spotlight Related Processes (if you want to reduce indexing)
-log_message "--- Killing Spotlight Related Processes (Optional) ---"
-kill_process "mdworker" "Spotlight Worker"
-kill_process "mds_stores" "Spotlight Stores"
-kill_process "corespotlightd" "Core Spotlight"
-kill_process "managedcorespotlightd" "Managed Core Spotlight"
+# Spotlight and image-analysis processes are deliberately preserved. They are
+# used by Live Text/OCR, Quick Look and searchable text extraction from JPEGs.
+log_message "--- Preserving Live Text/OCR and Image Indexing Processes ---"
+for functional_process in "${FUNCTIONAL_PROTECTED_PROCESSES[@]}"; do
+    log_message "🛡️  PRESERVED: $functional_process - Live Text/OCR and image indexing"
+done
 
 verify_processes() {
     local process_name
@@ -623,12 +762,11 @@ verify_processes() {
     local process_checks=(
         analyticsagent siriactionsd
         proactived intelligenceplatformd intelligencecontextd intelligenceflowd
-        intelligencetasksd visualintelligenced siriappintentsd siriknowledged
-        feedbackd knowledge-agent diagnostics_agent duetexpertd sirittsd
-        spotlightknowledged wifianalyticsd ecosystemanalyticsd osanalyticshelper
-        geoanalyticsd mediaanalysisd inputanalyticsd analyticsd audioanalyticsd
-        proactiveeventtrackerd mdworker mds_stores corespotlightd
-        managedcorespotlightd
+        intelligencetasksd siriappintentsd siriknowledged feedbackd
+        knowledge-agent diagnostics_agent duetexpertd sirittsd
+        wifianalyticsd ecosystemanalyticsd osanalyticshelper
+        geoanalyticsd inputanalyticsd analyticsd audioanalyticsd
+        proactiveeventtrackerd
     )
 
     sleep 2

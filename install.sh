@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # macOS Tahoe 26/27 Bloat Service Disabler - Installation Script
-# Version: 2.4
+# Version: 2.5
 #
 # This script installs the macOS Bloat Service Disabler system including:
 # - Main bloat service disabler script
@@ -34,6 +34,9 @@ BOOTSTRAP_DIR=""
 RAW_BASE_URL="${LEAN_MAC_RAW_BASE_URL:-https://raw.githubusercontent.com/realnoedelo/Lean_Mac/main}"
 INSTALL_DIR="/usr/local/bin"
 DAEMON_PLIST_DIR="/Library/LaunchDaemons"
+CONFIG_DIR="/usr/local/etc"
+PROFILE_FILE="$CONFIG_DIR/lean_mac.conf"
+PROFILE="safe"
 
 cleanup_bootstrap() {
     if [ -n "$BOOTSTRAP_DIR" ] && [ -d "$BOOTSTRAP_DIR" ]; then
@@ -82,6 +85,88 @@ get_user_home() {
     local actual_user
     actual_user=$(get_actual_user)
     eval echo "~$actual_user"
+}
+
+choose_profile() {
+    echo
+    print_title "Choosing service profile"
+    echo "The following profiles control only optional groups. Live Text/OCR, JPEG text recognition, Quick Look and image indexing remain protected."
+    echo
+    echo "  1) Safe (recommended)"
+    echo "     Disables analytics/telemetry only. Lowest risk; smallest resource savings."
+    echo "  2) Balanced"
+    echo "     Also disables Siri/Apple Intelligence suggestions and optional store/social services."
+    echo "     Siri, suggestions, weather/store background updates and some sharing features may change."
+    echo "  3) Custom"
+    echo "     Choose each optional group below. OCR/Live Text is never offered for disabling."
+    echo
+    local choice
+    read -r -p "Select profile [1-3, default 1]: " choice
+    case "$choice" in
+        2) PROFILE="balanced" ;;
+        3)
+            PROFILE="custom"
+            mkdir -p "$CONFIG_DIR"
+            : > "$PROFILE_FILE"
+            printf 'PROFILE=custom\n' >> "$PROFILE_FILE"
+            local group answer
+            for group in telemetry intelligence cloud store social; do
+                case "$group" in
+                    telemetry) print_status "Telemetry: analytics, diagnostics and Wi-Fi usage data; no user-facing feature loss." ;;
+                    intelligence) print_warning "Siri/Apple Intelligence: disables Siri actions, proactive suggestions and AI background tasks." ;;
+                    cloud) print_warning "Cloud/Music/Find My helpers: may affect Music cloud refresh; Find My labels remain protected." ;;
+                    store) print_warning "Store/media helpers: may delay Weather, App Store and media-remote updates." ;;
+                    social) print_warning "Social/keychain sharing helpers: may affect some sharing integrations; Handoff remains protected." ;;
+                esac
+                read -r -p "Disable $group group? [y/N]: " answer
+                if [[ "$answer" =~ ^[Yy]$ ]]; then
+                    printf 'GROUP_%s=1\n' "$group" >> "$PROFILE_FILE"
+                fi
+            done
+            ;;
+        *) PROFILE="safe" ;;
+    esac
+    if [ "$PROFILE" != "custom" ]; then
+        mkdir -p "$CONFIG_DIR"
+        printf 'PROFILE=%s\n' "$PROFILE" > "$PROFILE_FILE"
+    fi
+    chmod 0644 "$PROFILE_FILE"
+    print_status "Selected profile: $PROFILE"
+}
+
+remove_previous_installation() {
+    local actual_user user_home user_uid old_restore
+    actual_user=$(get_actual_user)
+    user_home=$(get_user_home)
+    user_uid=$(id -u "$actual_user" 2>/dev/null || true)
+    old_restore="$INSTALL_DIR/restore_macos_services.sh"
+
+    if [ ! -e "$DAEMON_PLIST_DIR/com.user.disablebloatservices.plist" ] \
+        && [ ! -e "$user_home/Library/LaunchAgents/com.user.disablebloatservices.agent.plist" ] \
+        && [ ! -e "$INSTALL_DIR/disable_bloat_services.sh" ]; then
+        return 0
+    fi
+
+    print_title "Removing previous installation"
+    if [ -x "$old_restore" ]; then
+        print_status "Restoring services disabled by the previous release..."
+        if grep -q 'ASSUME_YES' "$old_restore" 2>/dev/null; then
+            "$old_restore" --yes >/dev/null 2>&1 || print_warning "Previous services could not all be restored; continuing cleanup"
+        else
+            printf 'RESTORE\n' | "$old_restore" >/dev/null 2>&1 || print_warning "Previous services could not all be restored; continuing cleanup"
+        fi
+    fi
+    launchctl bootout system "$DAEMON_PLIST_DIR/com.user.disablebloatservices.plist" 2>/dev/null || true
+    launchctl bootout system/com.user.disablebloatservices 2>/dev/null || true
+    if [ -n "$user_uid" ] && [ "$actual_user" != root ]; then
+        sudo -u "$actual_user" launchctl bootout "gui/$user_uid" "$user_home/Library/LaunchAgents/com.user.disablebloatservices.agent.plist" 2>/dev/null || true
+        sudo -u "$actual_user" launchctl bootout "gui/$user_uid/com.user.disablebloatservices.agent" 2>/dev/null || true
+    fi
+    rm -f "$DAEMON_PLIST_DIR/com.user.disablebloatservices.plist"
+    rm -f "$user_home/Library/LaunchAgents/com.user.disablebloatservices.agent.plist"
+    rm -f "$INSTALL_DIR/disable_bloat_services.sh" "$INSTALL_DIR/cleanup_caches.sh"
+    rm -f "$INSTALL_DIR/restore_macos_services.sh" "$INSTALL_DIR/uninstall_bloat_disabler.sh"
+    print_status "✅ Previous installation removed"
 }
 
 # Download the companion scripts when install.sh was fetched on its own.
@@ -179,6 +264,8 @@ create_plist_files() {
     <array>
         <string>$INSTALL_DIR/disable_bloat_services.sh</string>
         <string>--system-only</string>
+        <string>--profile</string>
+        <string>$PROFILE</string>
     </array>
     
     <key>RunAtLoad</key>
@@ -227,6 +314,8 @@ EOF
     <array>
         <string>$INSTALL_DIR/disable_bloat_services.sh</string>
         <string>--user-only</string>
+        <string>--profile</string>
+        <string>$PROFILE</string>
     </array>
     
     <key>RunAtLoad</key>
@@ -403,7 +492,7 @@ show_post_install_info() {
     print_title "Installation Complete!"
     echo
     echo "==========================================="
-    echo "🎉 macOS Bloat Service Disabler v2.4 Installed"
+    echo "🎉 macOS Bloat Service Disabler v2.5 Installed"
     echo "==========================================="
     echo
     echo "📍 Installed Components:"
@@ -413,6 +502,7 @@ show_post_install_info() {
     echo "  • System daemon: /Library/LaunchDaemons/com.user.disablebloatservices.plist"
     echo "  • User agent: $user_home/Library/LaunchAgents/com.user.disablebloatservices.agent.plist"
     echo "  • Uninstaller: $INSTALL_DIR/uninstall_bloat_disabler.sh"
+    echo "  • Profile: $PROFILE ($PROFILE_FILE)"
     echo
     echo "🔄 Service Schedule:"
     echo "  • System-wide: Every 60 seconds"
@@ -422,6 +512,7 @@ show_post_install_info() {
     echo "  • Run bloat disabler: sudo disable_bloat_services.sh"
     echo "  • Clean caches: sudo cleanup_caches.sh"
     echo "  • Restore services: sudo restore_macos_services.sh"
+    echo "  • Reconfigure profile: edit $PROFILE_FILE and reload the launch jobs"
     echo "  • Uninstall: sudo uninstall_bloat_disabler.sh"
     echo
     echo "📝 Log Files:"
@@ -445,7 +536,7 @@ show_post_install_info() {
 main() {
     echo "==========================================="
     echo "🚀 macOS Tahoe 26/27 Bloat Service Disabler"
-    echo "    Installation Script v2.4"
+    echo "    Installation Script v2.5"
     echo "==========================================="
     echo
     
@@ -486,6 +577,8 @@ main() {
     
     # Run installation steps
     prepare_source_files
+    remove_previous_installation
+    choose_profile
     install_scripts
     create_plist_files
     rotate_error_logs
