@@ -40,7 +40,9 @@ for protected_service in \
   com.apple.corespotlightservice \
   com.apple.corespotlightd \
   com.apple.managedcorespotlightd \
-  com.apple.spotlightknowledged; do
+  com.apple.spotlightknowledged \
+  com.apple.spotlightknowledged.updater \
+  com.apple.spotlightknowledged.updater.cachedelete; do
   grep -Fq "    $protected_service" disable_bloat_services.sh
 done
 for protected_process in mediaanalysisd visualintelligenced spotlightknowledged mdworker mds_stores; do

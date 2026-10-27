@@ -201,6 +201,8 @@ PROTECTED_SERVICES=(
     com.apple.managedcorespotlightd
     com.apple.spotlightknowledged
     com.apple.spotlightknowledged.importer
+    com.apple.spotlightknowledged.updater
+    com.apple.spotlightknowledged.updater.cachedelete
 )
 
 # Processes that support Live Text/OCR, Quick Look metadata and image search.
@@ -739,7 +741,6 @@ kill_process "audioanalyticsd" "Audio Analytics"
 kill_process "ecosystemanalyticsd" "Ecosystem Analytics"
 kill_process "osanalyticshelper" "OS Analytics Helper"
 kill_process "proactiveeventtrackerd" "Proactive Event Tracker"
-kill_process "spotlightknowledged.updater" "Spotlight Knowledge Updater"
 
 # iTunes/Music Related Processes
 log_message "--- Killing iTunes/Music Related Processes ---"
